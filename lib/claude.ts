@@ -22,6 +22,7 @@ import { z } from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import {
   citationLabel,
+  tokenize,
   LOW_CONFIDENCE_RELEVANCE,
   type ScoredChunk,
 } from "./retrieve.ts";
@@ -37,13 +38,34 @@ import type { Chunk, ChunkEvidence } from "./data.ts";
 const MODEL = "claude-opus-5";
 const MAX_TOKENS = 2000;
 
+/**
+ * 폴백 경로에서 '이 원문이 질문에 답한다'고 인정할 최소 커버리지.
+ *
+ * 실측으로 정했다(질문 10종, 사업자 하나은행 기준):
+ *   문서 밖 질문 4종  → 0.000 ~ 0.222
+ *   문서 안 질문 6종  → 0.375 ~ 0.556 (1종은 0.000, 아래 참고)
+ * 두 무리 사이가 비어 있어 그 가운데인 0.3을 잡았다.
+ *
+ * "중도해지하면 불이익이 있나요"는 문서에 있는데도 0.000이 나온다.
+ * 상위 5개 원문 중 그 답을 담은 문단이 없어서이며, 임계값 문제가 아니라
+ * 검색 문제다. LLM 경로에서는 정상적으로 근거를 찾는다.
+ *
+ * LLM 경로는 모델이 인용한 청크로 등급을 정하므로 이 값을 쓰지 않는다.
+ * 키가 없을 때만 쓰이는 보수적 판정이며, 애매하면 no_document로 두는 편이
+ * 낫다 — 근거가 아닌 것을 근거라고 보여주는 쪽이 더 큰 손해다.
+ */
+const DOCUMENTED_COVERAGE = 0.3;
+
 const AnswerSchema = z.object({
   answer: z
     .string()
     .describe("사용자에게 보여줄 답변. 2~4문장. 마크다운 없이 평문."),
   citedChunkIds: z
     .array(z.string())
-    .describe("답변의 근거로 실제 사용한 청크의 id 목록"),
+    .describe(
+      "답변의 근거로 실제 사용한 청크의 id 목록. " +
+        "문서에서 질문의 답을 찾지 못했다면 빈 배열로 두세요.",
+    ),
 });
 
 export interface Citation {
@@ -56,11 +78,31 @@ export interface Citation {
   evidence?: ChunkEvidence;
 }
 
+/**
+ * 답변의 근거 등급. 화면 표시와 인용 노출을 이걸로 가른다.
+ *
+ *   unrelated    이 서비스와 무관한 질문. 답하지 않는다.
+ *                → relevance 임계값으로 코드가 판정 (LLM 호출 전)
+ *   no_document  관련은 있으나 공식 문서에서 답을 찾지 못했다.
+ *                계산 엔진 결과로만 답하고 그 사실을 밝힌다. 문서 인용 없음.
+ *   documented   공식 문서 원문에 근거가 있다. 인용 + 원문 마킹을 제공한다.
+ *
+ * no_document와 documented는 relevance로 나누지 않는다. 실측 결과 두 무리의
+ * relevance가 겹치기 때문이다(문서 밖 질문 최대 0.228 > 문서 안 질문 최소 0.118).
+ * relevance는 '어휘가 겹치는가'를 재지 '문서가 답을 담고 있는가'를 재지 않는다.
+ * 예: '물가'는 문서에 나오지만("수익률이 물가상승률보다 낮을 수 있으며")
+ *     "물가 오르면 어떻게 되나요"에 답하지는 않는다.
+ * → 대신 '답변이 실제로 원문을 인용했는가'라는 결과로 판정한다. 정의상 정확하다.
+ */
+export type AnswerTier = "unrelated" | "no_document" | "documented";
+
 export interface AskResult {
   answer: string;
   citations: Citation[];
   calcStrip: string[];
-  /** 근거를 찾지 못해 답변을 거부했다. */
+  /** 근거 등급. UI가 인용·마킹 노출 여부를 이걸로 정한다. */
+  tier: AnswerTier;
+  /** 근거를 찾지 못해 답변을 거부했다. tier === "unrelated"와 같다. */
   refused: boolean;
   /** LLM 없이 템플릿으로 생성했다. UI가 배지로 알린다. */
   degraded: boolean;
@@ -150,6 +192,18 @@ export function classifyIntent(question: string): Intent {
   return "general";
 }
 
+/**
+ * 인용 목록에 원문(pdf_text) 근거가 있으면 documented.
+ * 정규화본(구성내역)만 있으면 그것도 문서에서 뽑은 사실이지만 원문 페이지를
+ * 지목할 수 없으므로 no_document로 둔다 — '공식문서 기반 근거'라고 말하려면
+ * 원문의 어느 쪽 어느 줄인지 보여줄 수 있어야 한다.
+ */
+function tierFromCitations(citations: Citation[]): AnswerTier {
+  return citations.some((c) => c.sourceType === "pdf_text" && c.evidence)
+    ? "documented"
+    : "no_document";
+}
+
 export function refusalResult(
   facts: CalcFacts,
   relevance: number,
@@ -160,6 +214,7 @@ export function refusalResult(
       "상품설명서 원문이나 가입하신 판매사에 직접 확인하시기를 권합니다.",
     citations: [],
     calcStrip: calcStripLines(facts),
+    tier: "unrelated",
     refused: true,
     degraded: false,
     warnings: [],
@@ -245,45 +300,114 @@ export function templateAnswer(
     unresolvedIntent = intent === "general";
   }
 
-  // 의도를 특정했더라도 문서 근거가 약하면 마찬가지로 밝힌다.
-  // 예: "은퇴할 때 얼마나 모이나요"는 계산 엔진으로 답할 수 있지만
-  // 상품설명서에 근거가 있는 내용이 아니다. 그 차이를 숨기지 않는다.
-  if (relevance < LOW_CONFIDENCE_RELEVANCE) {
-    unresolvedIntent = true;
-  }
+  // 원문(pdf_text) 근거를 인용할 수 있는지가 tier를 가른다.
+  // 폴백은 모델처럼 "이 문단이 답을 담고 있나"를 판단할 수 없으므로,
+  // 질문의 내용어가 실제로 그 문단에 있는지로 대신 본다.
+  //
+  // 점수 1위 원문만 보면 안 된다. BM25 점수는 문단 전체의 어휘 밀도라
+  // "질문에 답하는 문장을 품고 있는가"와 다르다. 실측: "원금 손실이
+  // 발생할 수 있나요"에서 1위 원문은 겹침 1개(실격)였고, 3위 원문이
+  // "해지 시 원금손실이 발생할 수 있습니다"로 겹침 2개였다.
+  // → 후보 원문을 모두 훑어 가장 잘 맞는 것을 고른다.
+  const original = bestOriginalMatch(hits, question);
+  const quoted = original
+    ? sentenceAnswersQuestion(original.chunk, question)
+    : null;
 
-  // 의도별 문장이 없거나 부족하면 문서 인용으로 채운다.
-  // 인용문에 사업자명을 반드시 붙인다 — 사용자가 가입한 곳이 아닌 문서를
-  // "문서에는 이렇게 적혀 있습니다"로 인용하면 자기 상품 얘기로 오해한다.
-  const top = hits[0];
-  if (top) {
+  if (original && quoted) {
+    // 인용문에 사업자명을 반드시 붙인다 — 사용자가 가입한 곳이 아닌 문서를
+    // "문서에는 이렇게 적혀 있습니다"로 인용하면 자기 상품 얘기로 오해한다.
     const whose =
-      facts.profile.provider && top.chunk.provider === facts.profile.provider
+      facts.profile.provider &&
+      original.chunk.provider === facts.profile.provider
         ? "가입하신 상품의 문서"
-        : `${top.chunk.provider} 문서`;
-    parts.push(`${whose}에는 이렇게 적혀 있습니다: "${bestSentence(top.chunk, question)}"`);
+        : `${original.chunk.provider} 문서`;
+    parts.push(`${whose}에는 이렇게 적혀 있습니다: "${quoted}"`);
   }
 
   if (parts.length === 0) {
     return refusalResult(facts, relevance);
   }
 
-  if (unresolvedIntent) {
+  const tier: AnswerTier = original && quoted ? "documented" : "no_document";
+
+  if (tier === "no_document") {
     parts.push(
-      "다만 질문하신 내용이 확보한 문서에 직접 나와 있지 않을 수 있습니다. " +
-        "위 내용은 가입 상품의 구성 정보이며, 정확한 답은 판매사에 확인하시기 바랍니다.",
+      "다만 이 내용은 확보한 공식 문서에서 근거를 찾지 못해 계산 결과로만 답변한 것입니다. " +
+        "정확한 답은 판매사에 확인하시기 바랍니다.",
     );
   }
 
   return {
     answer: parts.join(" "),
-    citations: hits.slice(0, 3).map((h) => toCitation(h.chunk)),
+    // no_document면 문서 인용을 붙이지 않는다. 약하게 걸린 문단을 '근거'로
+    // 제시하면 문서가 그 답을 뒷받침한다는 오해를 준다.
+    citations:
+      tier === "documented" && original ? [toCitation(original.chunk)] : [],
     calcStrip: calcStripLines(facts),
+    tier,
     refused: false,
     degraded: true,
     warnings: [],
     relevance,
   };
+}
+
+/**
+ * 후보 중 질문과 가장 잘 맞는 원문 청크를 고른다.
+ * 마킹 좌표가 있는 원문만 대상이다 — 페이지를 지목할 수 없으면
+ * '공식문서 기반 근거'라고 말할 수 없다.
+ */
+function bestOriginalMatch(
+  hits: ScoredChunk[],
+  question: string,
+): ScoredChunk | null {
+  let best: ScoredChunk | null = null;
+  let bestCoverage = 0;
+
+  for (const h of hits) {
+    if (h.chunk.sourceType !== "pdf_text" || !h.chunk.evidence) continue;
+    const coverage = questionCoverage(h.chunk, question);
+    if (coverage > bestCoverage) {
+      best = h;
+      bestCoverage = coverage;
+    }
+  }
+  return best;
+}
+
+/**
+ * 청크의 대표 문장이 질문을 얼마나 덮는지 0~1로 잰다.
+ *
+ * 조사가 붙은 원시 어절로 비교하면 양방향으로 틀린다. 실측 사례:
+ *   놓침 — "예금자보호가"가 문서의 "예금자보호능"과 글자가 달라 매칭 실패
+ *   오탐 — "물가 오르면 어떻게 되나요"가 "손실 추정액은 어떻게 되나요?"와
+ *          기능어 둘만으로 겹쳐 통과
+ * → BM25에서 이미 쓰는 tokenize()를 그대로 쓴다. 불용어·한 글자를 걸러내고
+ *   bigram으로 조사 변형을 흡수하므로 두 문제가 함께 풀린다.
+ */
+function questionCoverage(chunk: Chunk, question: string): number {
+  const q = new Set(tokenize(question));
+  if (q.size === 0) return 0;
+
+  const s = new Set(tokenize(bestSentence(chunk, question)));
+  let hit = 0;
+  for (const t of q) if (s.has(t)) hit++;
+  return hit / q.size;
+}
+
+/**
+ * 그 청크가 질문에 답하는 문장을 담고 있는지 보고, 있으면 그 문장을 돌려준다.
+ *
+ * 폴백 경로에는 모델이 없으므로 의미 판단을 할 수 없다. 대신 질문의 내용어가
+ * 문장에 실제로 등장하는지를 본다. 한 단어만 스쳐도 통과시키면 "물가 오르면
+ * 어떻게 되나요"에 "수익률이 물가상승률보다 낮을 수 있으며"를 근거랍시고
+ * 붙이게 되므로, 두 개 이상 겹칠 때만 인정한다.
+ */
+function sentenceAnswersQuestion(chunk: Chunk, question: string): string | null {
+  return questionCoverage(chunk, question) >= DOCUMENTED_COVERAGE
+    ? bestSentence(chunk, question)
+    : null;
 }
 
 /** 문자열에서 숫자만 뽑는다. 천단위 콤마는 제거해 비교 가능한 형태로 만든다. */
@@ -345,6 +469,12 @@ const SYSTEM_PROMPT = `당신은 퇴직연금 디폴트옵션 진단 서비스 '
    때문이며 예외가 없습니다.
 5. 실제로 근거로 사용한 청크의 id를 citedChunkIds에 담으세요. 사용하지 않은
    청크의 id를 넣지 마세요.
+6. 근거로는 [원문] 표시가 붙은 것을 우선 인용하세요. 원문은 상품설명서의
+   실제 페이지라 사용자에게 그 위치를 표시해 줄 수 있습니다.
+   [구성내역]은 원문에서 뽑아 정리한 요약이라 페이지를 지목할 수 없습니다.
+7. 문서가 질문에 답하지 못하면 citedChunkIds를 **빈 배열**로 두고,
+   "공식 문서에서 근거를 찾지 못했다"고 밝힌 뒤 계산 엔진 결과로 답할 수
+   있는 부분만 답하세요. 억지로 관련 없는 문단을 근거로 끌어오지 마세요.
 
 [문체]
 - 2~4문장. 평문. 마크다운 기호를 쓰지 마세요.
@@ -362,10 +492,15 @@ function buildUserPrompt(
     .join("\n");
 
   const evidence = hits
-    .map(
-      (h, i) =>
-        `[근거 ${i + 1}] id=${h.chunk.id} · 출처=${citationLabel(h.chunk)} · 사업자=${h.chunk.provider}\n${h.chunk.text}`,
-    )
+    .map((h, idx) => {
+      // 원문과 정규화 요약을 구분해 준다. 모델이 어느 쪽을 인용했는지가
+      // 곧 답변 등급(documented / no_document)을 가르기 때문이다.
+      const kind = h.chunk.sourceType === "pdf_text" ? "원문" : "구성내역";
+      const head =
+        `[근거 ${idx + 1}] [${kind}] id=${h.chunk.id} · ` +
+        `출처=${citationLabel(h.chunk)} · 사업자=${h.chunk.provider}`;
+      return `${head}\n${h.chunk.text}`;
+    })
     .join("\n\n");
 
   // 검색 점수가 낮다는 것은 아래 근거가 질문과 잘 맞지 않는다는 뜻이다.
@@ -406,40 +541,62 @@ export async function generateAnswer(
 
   try {
     const client = new Anthropic();
-    const response = await client.messages.parse({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      // 이미 확정된 사실을 서술하는 단순 작업이고, 기능명세서가 10초 이내
-      // 응답을 요구한다. 깊은 추론이 필요한 작업이 아니다.
-      output_config: {
-        effort: "low",
-        format: zodOutputFormat(AnswerSchema),
-      },
-      messages: [
-        {
-          role: "user",
-          content: buildUserPrompt(question, facts, hits, relevance),
+    const prompt = buildUserPrompt(question, facts, hits, relevance);
+
+    const call = () =>
+      client.messages.parse({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM_PROMPT,
+        // 이미 확정된 사실을 서술하는 단순 작업이고, 기능명세서가 10초 이내
+        // 응답을 요구한다. 깊은 추론이 필요한 작업이 아니다.
+        output_config: {
+          effort: "low",
+          format: zodOutputFormat(AnswerSchema),
         },
-      ],
-    });
+        messages: [{ role: "user", content: prompt }],
+      });
 
-    const parsed = response.parsed_output;
-    // 스키마 파싱 실패 → 폴백 (기획서 §3 "파싱 실패 시 1회 재시도 후 폴백")
-    if (!parsed) return fallback();
+    let response = await call();
+    let parsed = response.parsed_output;
 
+    // 기능명세서 §3: "파싱 실패 시 1회 재시도 후 폴백".
+    // 예전에는 재시도도 로그도 없이 조용히 폴백했다. 그러면 화면에는
+    // degraded 배지만 뜨고 원인을 알 길이 없다 — 실제로 특정 질문이
+    // 이유 없이 요약 모드로 답하는 것을 디버깅하는 데 시간이 걸렸다.
+    if (!parsed) {
+      console.warn(
+        `[M4] 스키마 파싱 실패 (stop_reason=${response.stop_reason}). 1회 재시도합니다. 질문: ${question.slice(0, 40)}`,
+      );
+      response = await call();
+      parsed = response.parsed_output;
+    }
+
+    if (!parsed) {
+      console.error(
+        `[M4] 재시도도 파싱 실패 → 폴백. stop_reason=${response.stop_reason}`,
+      );
+      return fallback();
+    }
+
+    // 모델이 인용한 청크만 근거로 삼는다.
+    // 예전에는 인용이 비면 검색 상위를 대신 붙였는데, 그건 모델이
+    // "문서에서 못 찾았다"고 말한 것을 무시하고 근거를 지어 붙이는 셈이었다.
+    // 빈 인용은 그 자체가 no_document 신호다.
     const citedIds = new Set(parsed.citedChunkIds);
-    const cited = hits.filter((h) => citedIds.has(h.chunk.id));
-    // 모델이 인용 id를 하나도 못 맞히면 검색 상위 결과를 근거로 보여준다.
-    // 근거 없는 답변을 내보내지 않기 위한 최소 보장이다.
-    const citations = (cited.length > 0 ? cited : hits.slice(0, 2)).map((h) =>
-      toCitation(h.chunk),
-    );
+    const citations = hits
+      .filter((h) => citedIds.has(h.chunk.id))
+      .map((h) => toCitation(h.chunk));
+
+    const tier = tierFromCitations(citations);
 
     return {
       answer: parsed.answer,
-      citations,
+      // no_document면 인용을 노출하지 않는다. 원문 페이지를 지목할 수 없는
+      // 근거를 '근거'로 보여주면 문서가 뒷받침한다는 오해를 준다.
+      citations: tier === "documented" ? citations : [],
       calcStrip: calcStripLines(facts),
+      tier,
       refused: false,
       degraded: false,
       warnings: validateNumbers(parsed.answer, facts, hits, question),

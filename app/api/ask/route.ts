@@ -54,8 +54,13 @@ export async function POST(request: Request) {
   const facts = buildCalcFacts(profile);
 
   // ② 문서 검색
+  // minOriginalText: 원문(pdf_text) 자리를 3개 예약한다.
+  // 구성내역 정규화본 15개가 짧고 밀도가 높아 상위를 독점하는데, 페이지
+  // 좌표는 원문에만 있다. 예약하지 않으면 '공식문서 기반 근거'를 제시할
+  // 원문이 후보에서 밀려 documented 등급이 나오지 않는다.
   const { hits, relevance, belowThreshold } = search(question, {
     k: 5,
+    minOriginalText: 3,
     preferProvider: profile.provider ?? undefined,
   });
 
@@ -64,9 +69,13 @@ export async function POST(request: Request) {
     return NextResponse.json(refusalResult(facts, relevance));
   }
 
-  // 사용자 본인의 구성내역을 근거 맨 앞에 고정한다.
+  // 사용자 본인의 구성내역을 근거에 포함시킨다.
   // 검색만으로는 다른 사업자의 유사 문장이 먼저 올라올 수 있는데,
   // "내 상품"을 묻는 질문에 남의 상품 문서를 근거로 다는 것은 오해를 부른다.
+  //
+  // 단, 원문 쿼터를 잠식하지 않도록 정규화본 자리만 밀어낸다.
+  // 예전에는 맨 앞에 끼워 넣어 원문 하나를 밀어냈고, 그 결과 모델이
+  // 인용할 원문이 줄어 documented 등급이 잘 나오지 않았다.
   let evidence: ScoredChunk[] = hits;
   if (facts.portfolio) {
     const own = findOwnPortfolioChunk(
@@ -74,7 +83,13 @@ export async function POST(request: Request) {
       facts.portfolio.detail.name,
     );
     if (own && !hits.some((h) => h.chunk.id === own.id)) {
-      evidence = [{ chunk: own, score: hits[0].score }, ...hits].slice(0, 5);
+      const originals = hits.filter((h) => h.chunk.sourceType === "pdf_text");
+      const normalized = hits.filter((h) => h.chunk.sourceType !== "pdf_text");
+      evidence = [
+        ...originals,
+        { chunk: own, score: hits[0].score },
+        ...normalized,
+      ].slice(0, 5);
     }
   }
 

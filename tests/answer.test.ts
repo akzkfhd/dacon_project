@@ -16,6 +16,11 @@ import {
   withTopicParticle,
 } from "../lib/claude.ts";
 
+/** 라우트와 같은 조건으로 검색한다 — 원문 쿼터 포함. */
+function retrieve(q: string, provider = "하나은행") {
+  return search(q, { k: 5, minOriginalText: 3, preferProvider: provider });
+}
+
 const PROFILE: UserProfile = {
   age: 38,
   retireAge: 60,
@@ -67,15 +72,21 @@ test("질문 의도 분류가 동작한다", () => {
 test("폴백 답변이 실제로 쓸 만하다 — 키 없이도 데모가 돈다", () => {
   const facts = buildCalcFacts(PROFILE);
   const q = "왜 구성품은 2등급인데 라벨은 저위험인가요?";
-  const { hits, relevance } = search(q, { preferProvider: "하나은행" });
+  const { hits, relevance } = retrieve(q);
 
   const result = templateAnswer(q, facts, hits, relevance);
 
   assert.equal(result.degraded, true, "폴백임을 표시해야 한다");
   assert.equal(result.refused, false);
   assert.ok(result.answer.length > 40, "스텁이 아니라 실제 문장이어야 한다");
-  assert.ok(result.citations.length > 0, "근거를 달아야 한다");
   assert.ok(result.calcStrip.length > 0, "계산 엔진 결과가 함께 나와야 한다");
+  // 근거 유무는 tier가 정한다. 이 질문은 계산 엔진이 답하는 것이라
+  // 원문 인용이 없을 수 있고, 그때는 인용을 붙이지 않는 것이 옳다.
+  if (result.tier === "documented") {
+    assert.ok(result.citations.length > 0);
+  } else {
+    assert.equal(result.citations.length, 0);
+  }
 });
 
 test("폴백 답변이 계산 엔진 숫자를 인용한다", () => {
@@ -140,11 +151,72 @@ test("구성 질문에는 불확실 단서를 붙이지 않는다", () => {
   assert.ok(!r.answer.includes("직접 나와 있지 않을 수 있습니다"));
 });
 
-test("분류 불가 질문에는 한계를 밝힌다", () => {
+test("문서에 근거가 없으면 그 사실을 답변에 밝힌다", () => {
   const facts = buildCalcFacts(PROFILE);
   const q = "연금 수령은 언제부터 가능한가요";
-  const { hits, relevance } = search(q, { preferProvider: "하나은행" });
+  const { hits, relevance } = retrieve(q);
   const r = templateAnswer(q, facts, hits, relevance);
   assert.equal(classifyIntent(q), "general");
-  assert.ok(r.answer.includes("직접 나와 있지 않을 수 있습니다"));
+  assert.equal(r.tier, "no_document");
+  assert.match(r.answer, /공식 문서에서 근거를 찾지 못해/);
+});
+
+test("① 무관한 질문은 unrelated", () => {
+  const r = refusalResult(buildCalcFacts(PROFILE), 0.01);
+  assert.equal(r.tier, "unrelated");
+  assert.equal(r.refused, true);
+  assert.equal(r.citations.length, 0);
+});
+
+test("③ 문서에 있는 질문은 documented — 원문 근거와 마킹이 붙는다", () => {
+  const facts = buildCalcFacts(PROFILE);
+  const q = "원금 손실이 발생할 수 있나요";
+  const { hits, relevance } = retrieve(q);
+  const r = templateAnswer(q, facts, hits, relevance);
+
+  assert.equal(r.tier, "documented", `answer=${r.answer.slice(0, 80)}`);
+  assert.ok(r.citations.length > 0, "근거가 있어야 한다");
+  assert.ok(
+    r.citations.every((c) => c.sourceType === "pdf_text" && c.evidence),
+    "documented의 근거는 원문 + 페이지 마킹이어야 한다",
+  );
+});
+
+test("② 문서 밖 질문은 no_document — 문서 인용을 붙이지 않는다", () => {
+  const facts = buildCalcFacts(PROFILE);
+  const q = "은퇴할 때 얼마나 모이나요";
+  const { hits, relevance } = retrieve(q);
+  const r = templateAnswer(q, facts, hits, relevance);
+
+  assert.equal(r.tier, "no_document");
+  assert.equal(
+    r.citations.length,
+    0,
+    "약하게 걸린 문단을 근거로 보여주면 문서가 뒷받침한다는 오해를 준다",
+  );
+  assert.match(r.answer, /공식 문서에서 근거를 찾지 못해/);
+  assert.ok(r.calcStrip.length > 0, "계산 결과는 그대로 보여준다");
+});
+
+test("no_document여도 답변 자체는 쓸모가 있다", () => {
+  const facts = buildCalcFacts(PROFILE);
+  const q = "은퇴할 때 얼마나 모이나요";
+  const { hits, relevance } = retrieve(q);
+  const r = templateAnswer(q, facts, hits, relevance);
+  // 계산 엔진이 낸 예상 적립금이 답변에 들어 있어야 한다
+  assert.match(r.answer, /만원/);
+  assert.deepEqual(validateNumbers(r.answer, facts, hits, q), []);
+});
+
+test("스캔 PDF 사업자는 documented가 될 수 없다 — 좌표가 없다", () => {
+  const mirae = { ...PROFILE, provider: "미래에셋증권", currentLabel: "고위험" };
+  const facts = buildCalcFacts(mirae);
+  const q = "구성상품이 뭔가요";
+  const { hits, relevance } = retrieve(q, "미래에셋증권");
+  const r = templateAnswer(q, facts, hits, relevance);
+  // 미래에셋 원문이 없으므로 다른 사업자 원문이 인용될 수는 있다.
+  // 핵심은 근거가 붙었다면 반드시 마킹 가능한 원문이라는 것.
+  if (r.tier === "documented") {
+    assert.ok(r.citations.every((c) => c.evidence));
+  }
 });

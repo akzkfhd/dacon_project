@@ -42,9 +42,11 @@ const B = 0.75;
  *   - "환율이 얼마인가요"(0.109)는 문서에 '환율변동위험'이 실제로 있어
  *     아주 틀린 매칭도 아니다.
  *
- * 그래서 임계값은 '명백한 무관'만 쳐내는 위치(0.06)에 두고, 경계 구간은
- * 거부 대신 LOW_CONFIDENCE_RELEVANCE로 걸러 답변에 한계를 밝히게 했다.
- * 애매한 질문을 묵살하는 것보다, 답하되 근거가 약하다고 말하는 편이 낫다.
+ * 그래서 임계값은 '명백한 무관'만 쳐내는 위치(0.06)에 둔다. 이 경계에서는
+ * relevance가 잘 듣는다(무관 0.000~0.025 vs 관련 0.038~).
+ * 반면 '문서에 있는 질문'과 '문서 밖 질문'은 relevance로 나눌 수 없다 —
+ * 두 무리가 겹친다(문서 밖 최대 0.228 > 문서 안 최소 0.118). 그 구분은
+ * 답변이 실제로 원문을 인용했는지로 판정한다(lib/claude.ts의 AnswerTier).
  *
  * 청크를 대폭 늘리면 이 분포가 달라지므로 재측정할 것
  * (tests/retrieve.test.ts가 양쪽을 모두 검사한다).
@@ -52,8 +54,12 @@ const B = 0.75;
 export const RELEVANCE_THRESHOLD = 0.06;
 
 /**
- * 이 값 미만이면 "문서 근거가 약하다"로 본다. 거부하지는 않되,
- * 답변에 "질문하신 내용이 문서에 직접 나와 있지 않을 수 있습니다"를 붙인다.
+ * 이 값 미만이면 "문서 근거가 약하다"로 본다.
+ *
+ * 답변 등급(AnswerTier)을 가르는 데는 쓰지 않는다 — 그건 '답변이 실제로
+ * 원문을 인용했는가'로 정한다(lib/claude.ts 참조). 이 값은 LLM 프롬프트에
+ * "아래 근거는 관련도가 낮게 측정됐으니 억지로 연결하지 말라"는 힌트를
+ * 넣을지 판단하는 데만 쓴다.
  */
 export const LOW_CONFIDENCE_RELEVANCE = 0.15;
 
@@ -162,10 +168,23 @@ export interface SearchOptions {
   k?: number;
   /** 이 사업자의 청크에 가산점. 사용자가 가입한 곳의 문서를 우선 보여준다. */
   preferProvider?: string;
+  /**
+   * 원문(pdf_text) 청크를 최소 몇 개 보장할지.
+   *
+   * 지정하지 않으면 순수 점수순이라 구성내역 정규화본이 상위를 독점한다.
+   * 정규화본은 15개뿐인데 짧고 밀도가 높아("원리금보장상품이 없어 전액 원금
+   * 손실 가능성이 있습니다") BM25에 절대적으로 유리하다. 실측 결과
+   * "원금 손실이 발생할 수 있나요"의 1~4위가 전부 정규화본이었고 원문은
+   * 5위에서야 등장했다 — k=5면 원문이 하나만 LLM에 도달한다.
+   *
+   * 원문에만 페이지 좌표(evidence)가 있으므로, 원문이 후보에서 밀리면
+   * '공식문서 기반 근거'를 제시할 수 없게 된다. 그래서 자리를 예약한다.
+   */
+  minOriginalText?: number;
 }
 
 export function search(query: string, options: SearchOptions = {}): RetrievalResult {
-  const { k = 5, preferProvider } = options;
+  const { k = 5, preferProvider, minOriginalText = 0 } = options;
   const index = getIndex();
   const queryTokens = tokenize(query);
 
@@ -198,7 +217,8 @@ export function search(query: string, options: SearchOptions = {}): RetrievalRes
   });
 
   scored.sort((a, b) => b.score - a.score);
-  const hits = scored.slice(0, k).filter((h) => h.score > 0);
+  const positive = scored.filter((h) => h.score > 0);
+  const hits = applyQuota(positive, k, minOriginalText);
 
   // 이론적 최대: 모든 질의 토큰이 포화 빈도로 평균 길이 문서에 등장한 경우.
   // 이것으로 나누면 질의 길이와 무관한 0~1 상대 점수가 된다.
@@ -213,8 +233,11 @@ export function search(query: string, options: SearchOptions = {}): RetrievalRes
     return s + idf(df, index.total) * (K1 + 1);
   }, 0);
 
-  const relevance = maxPossible > 0 && hits.length > 0
-    ? Math.min(1, hits[0].score / maxPossible)
+  // relevance는 쿼터와 무관하게 '가장 잘 맞는 청크'의 점수로 잰다.
+  // 쿼터는 근거 구성을 위한 배치일 뿐, 질문-문서 적합도를 바꾸지 않는다.
+  const best = positive[0];
+  const relevance = maxPossible > 0 && best
+    ? Math.min(1, best.score / maxPossible)
     : 0;
 
   return {
@@ -222,6 +245,33 @@ export function search(query: string, options: SearchOptions = {}): RetrievalRes
     relevance: Math.round(relevance * 1000) / 1000,
     belowThreshold: relevance < RELEVANCE_THRESHOLD,
   };
+}
+
+/**
+ * 점수순 상위 k개를 뽑되, 원문 청크 자리를 minOriginalText개 예약한다.
+ * 원문이 그만큼 없으면(미래에셋증권처럼 스캔 PDF뿐인 경우) 있는 만큼만
+ * 넣고 나머지는 점수순으로 채운다 — 없는 데이터를 억지로 만들지 않는다.
+ */
+function applyQuota(
+  scored: ScoredChunk[],
+  k: number,
+  minOriginalText: number,
+): ScoredChunk[] {
+  if (minOriginalText <= 0) return scored.slice(0, k);
+
+  const reserved = scored
+    .filter((h) => h.chunk.sourceType === "pdf_text")
+    .slice(0, Math.min(minOriginalText, k));
+
+  const reservedIds = new Set(reserved.map((h) => h.chunk.id));
+  const rest = scored.filter((h) => !reservedIds.has(h.chunk.id));
+
+  // 예약분을 먼저 채우고 남은 자리를 점수순으로 메운 뒤, 전체를 다시
+  // 점수순으로 정렬한다. 프롬프트에서 근거 순서가 뒤죽박죽이면 모델이
+  // 첫 근거를 더 신뢰하는 경향과 어긋난다.
+  return [...reserved, ...rest.slice(0, Math.max(0, k - reserved.length))].sort(
+    (a, b) => b.score - a.score,
+  );
 }
 
 /** 인용 표기용 문자열. "문서명 3p" 또는 페이지가 없으면 문서명만. */

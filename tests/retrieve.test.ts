@@ -145,3 +145,45 @@ test("원문 청크는 페이지 번호를 갖는다 — 인용의 정밀도", (
     "원문 청크에 페이지 번호가 빠졌다",
   );
 });
+
+test("원문 쿼터가 정규화본의 상위 독점을 뚫는다", () => {
+  // 구성내역 정규화본 15개는 짧고 밀도가 높아 BM25 상위를 독점한다.
+  // 쿼터가 없으면 원문이 후보에 거의 못 들어오고, 원문에만 페이지 좌표가
+  // 있으므로 '공식문서 기반 근거'를 제시할 수 없게 된다.
+  for (const q of [
+    "원금 손실이 발생할 수 있나요",
+    "합성총보수는 얼마인가요",
+    "구성상품이 뭔가요",
+  ]) {
+    const plain = search(q, { k: 5, preferProvider: "하나은행" });
+    const quota = search(q, { k: 5, minOriginalText: 3, preferProvider: "하나은행" });
+
+    const countOriginal = (r: typeof plain) =>
+      r.hits.filter((h) => h.chunk.sourceType === "pdf_text").length;
+
+    assert.ok(
+      countOriginal(quota) >= 3,
+      `"${q}": 원문 ${countOriginal(quota)}개 (쿼터 없으면 ${countOriginal(plain)}개)`,
+    );
+  }
+});
+
+test("쿼터를 걸어도 relevance는 변하지 않는다", () => {
+  // 쿼터는 근거 배치일 뿐 질문-문서 적합도를 바꾸지 않는다.
+  const q = "원금 손실이 발생할 수 있나요";
+  assert.equal(
+    search(q, { k: 5 }).relevance,
+    search(q, { k: 5, minOriginalText: 3 }).relevance,
+  );
+});
+
+test("원문이 부족하면 있는 만큼만 넣는다", () => {
+  // 미래에셋증권은 스캔 PDF라 원문 청크가 0개다. 없는 데이터를 만들지 않는다.
+  const r = search("구성상품이 뭔가요", {
+    k: 5,
+    minOriginalText: 5,
+    preferProvider: "미래에셋증권",
+  });
+  assert.ok(r.hits.length > 0, "결과 자체는 나와야 한다");
+  assert.ok(r.hits.length <= 5);
+});

@@ -30,10 +30,14 @@ interface Citation {
   };
 }
 
+/** 답변의 근거 등급. lib/claude.ts의 AnswerTier와 같다. */
+type AnswerTier = "unrelated" | "no_document" | "documented";
+
 interface AskResult {
   answer: string;
   citations: Citation[];
   calcStrip: string[];
+  tier: AnswerTier;
   refused: boolean;
   degraded: boolean;
   warnings: string[];
@@ -331,9 +335,19 @@ function TurnView({
                 : "border-line bg-paper-2 text-txt"
             }`}
           >
-            {r.refused && (
+            {r.tier === "unrelated" && (
               <span className="mb-1.5 block text-[11px] font-bold text-amber-deep">
-                근거 미발견 · 답변 생성 중단
+                이 서비스 범위 밖 · 답변 생성 중단
+              </span>
+            )}
+            {r.tier === "documented" && (
+              <span className="mb-1.5 inline-block rounded-full bg-[#E8F1EA] px-2 py-0.5 text-[10.5px] font-bold text-ok">
+                공식 문서 근거 있음
+              </span>
+            )}
+            {r.tier === "no_document" && (
+              <span className="mb-1.5 inline-block rounded-full bg-[#EEF3F7] px-2 py-0.5 text-[10.5px] font-bold text-[#33546E]">
+                계산 결과 기반 · 공식 문서에 근거 없음
               </span>
             )}
             {r.answer}
