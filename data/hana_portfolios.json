@@ -1,0 +1,164 @@
+[
+  {
+    "id": "agg1",
+    "name": "적극투자형 포트폴리오1",
+    "risk": "고위험",
+    "grade": 2,
+    "fee": 0.784,
+    "holdings": [
+      {
+        "name": "미래에셋전략배분적격TDF2050",
+        "type": "fund",
+        "ratio": 50,
+        "equity": 60
+      },
+      {
+        "name": "한화LIFEPLUS적격TDF2050",
+        "type": "fund",
+        "ratio": 50,
+        "equity": 60
+      }
+    ],
+    "real_equity": 60.0,
+    "deposit_pct": 0
+  },
+  {
+    "id": "agg2",
+    "name": "적극투자형 포트폴리오2",
+    "risk": "고위험",
+    "grade": 2,
+    "fee": 0.572,
+    "holdings": [
+      {
+        "name": "미래에셋하나1Q연금",
+        "type": "fund",
+        "ratio": 30,
+        "equity": 55
+      },
+      {
+        "name": "삼성밀당다람쥐글로벌EMP",
+        "type": "fund",
+        "ratio": 70,
+        "equity": 60
+      }
+    ],
+    "real_equity": 58.5,
+    "deposit_pct": 0
+  },
+  {
+    "id": "mid1",
+    "name": "중립투자형 포트폴리오1",
+    "risk": "중위험",
+    "grade": 3,
+    "fee": 0.413,
+    "holdings": [
+      {
+        "name": "미래에셋전략배분적격TDF2035",
+        "type": "fund",
+        "ratio": 50,
+        "equity": 55
+      },
+      {
+        "name": "삼성글로벌EMP적격TDF2035",
+        "type": "fund",
+        "ratio": 25,
+        "equity": 50
+      },
+      {
+        "name": "농협은행 정기예금 3년",
+        "type": "deposit",
+        "ratio": 25,
+        "equity": 0,
+        "rate": 3.3
+      }
+    ],
+    "real_equity": 40.0,
+    "deposit_pct": 25
+  },
+  {
+    "id": "mid3",
+    "name": "중립투자형 포트폴리오3",
+    "risk": "중위험",
+    "grade": 3,
+    "fee": 0.188,
+    "holdings": [
+      {
+        "name": "신한빅사이클자산배분",
+        "type": "fund",
+        "ratio": 75,
+        "equity": 60
+      },
+      {
+        "name": "DB손해보험 GIC 3년",
+        "type": "gic",
+        "ratio": 25,
+        "equity": 0,
+        "rate": 4.6
+      }
+    ],
+    "real_equity": 45.0,
+    "deposit_pct": 25
+  },
+  {
+    "id": "stb1",
+    "name": "안정투자형 포트폴리오1",
+    "risk": "저위험",
+    "grade": 4,
+    "fee": 0.244,
+    "holdings": [
+      {
+        "name": "하나더넥스트적격TDF2030",
+        "type": "fund",
+        "ratio": 30,
+        "equity": 45
+      },
+      {
+        "name": "NH-Amundi하나로적격TDF2030",
+        "type": "fund",
+        "ratio": 30,
+        "equity": 45
+      },
+      {
+        "name": "우리은행 정기예금 3년",
+        "type": "deposit",
+        "ratio": 40,
+        "equity": 0,
+        "rate": 3.2
+      }
+    ],
+    "real_equity": 27.0,
+    "deposit_pct": 40
+  },
+  {
+    "id": "safe",
+    "name": "안정형 포트폴리오",
+    "risk": "초저위험",
+    "grade": 5,
+    "fee": 0,
+    "holdings": [
+      {
+        "name": "신한은행 정기예금 3년",
+        "type": "deposit",
+        "ratio": 35,
+        "equity": 0,
+        "rate": 3.27
+      },
+      {
+        "name": "국민은행 정기예금 3년",
+        "type": "deposit",
+        "ratio": 35,
+        "equity": 0,
+        "rate": 3.25
+      },
+      {
+        "name": "기업은행 정기예금 3년",
+        "type": "deposit",
+        "ratio": 30,
+        "equity": 0,
+        "rate": 3.16
+      }
+    ],
+    "real_equity": 0.0,
+    "deposit_pct": 100
+  }
+]

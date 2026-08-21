@@ -1,0 +1,207 @@
+{
+  "note": "구성상품 상세의 단일 원천(single source of truth). scripts/03_verify_engine.py와 런타임(lib/portfolios.ts)이 모두 이 파일을 읽는다. 이전에는 검증 스크립트에 하드코딩되어 있어 런타임과 어긋날 위험이 있었다. 사업자별 원문 전사 근거와 판단 과정은 data/{hana,kb,samsung,miraeasset}_portfolios.json의 note 필드 참조.",
+  "as_of": "2026-08",
+  "portfolios": [
+    {
+      "provider": "IBK기업은행",
+      "name": "적극투자형 포트폴리오 2호",
+      "riskLabel": "고위험",
+      "riskGrade": 2,
+      "totalFeePct": 0.71832,
+      "docStatedScore": 2.6,
+      "sourceDoc": "IBK기업은행 디폴트옵션 적극투자형 포트폴리오 2호 상품설명서",
+      "holdings": [
+        { "name": "삼성한국형TDF2045", "kind": "fund", "ratioPct": 40, "productGrade": 2, "ratePct": null },
+        { "name": "한국투자TDF알아서2040", "kind": "fund", "ratioPct": 40, "productGrade": 2, "ratePct": null },
+        { "name": "신한은행 퇴직연금 정기예금", "kind": "deposit", "ratioPct": 20, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "IBK기업은행",
+      "name": "중립투자형 포트폴리오 2호",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "IBK기업은행 디폴트옵션 상품설명서",
+      "holdings": [
+        { "name": "집합투자증권", "kind": "fund", "ratioPct": 60, "productGrade": 2, "ratePct": null },
+        { "name": "정기예금", "kind": "deposit", "ratioPct": 40, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "IBK기업은행",
+      "name": "중립투자형 포트폴리오 3호",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "IBK기업은행 디폴트옵션 상품설명서",
+      "holdings": [
+        { "name": "집합투자증권", "kind": "fund", "ratioPct": 80, "productGrade": 2, "ratePct": null },
+        { "name": "정기예금", "kind": "deposit", "ratioPct": 20, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "IBK기업은행",
+      "name": "안정투자형 포트폴리오 1호",
+      "riskLabel": "저위험",
+      "riskGrade": 4,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "IBK기업은행 디폴트옵션 상품설명서",
+      "holdings": [
+        { "name": "집합투자증권", "kind": "fund", "ratioPct": 40, "productGrade": 2, "ratePct": null },
+        { "name": "정기예금", "kind": "deposit", "ratioPct": 60, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "신한투자증권",
+      "name": "적극투자형 포트폴리오 1호",
+      "riskLabel": "고위험",
+      "riskGrade": 2,
+      "totalFeePct": 0.8169,
+      "docStatedScore": null,
+      "sourceDoc": "신한투자증권 디폴트옵션 적극투자형 포트폴리오 1호 상품설명서",
+      "holdings": [
+        { "name": "신한마음편한적격TDF2050", "kind": "fund", "ratioPct": 50, "productGrade": 2, "ratePct": null },
+        { "name": "한국투자적격TDF알아서2050", "kind": "fund", "ratioPct": 50, "productGrade": 2, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "하나은행",
+      "name": "중립투자형 포트폴리오1",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": 0.413,
+      "docStatedScore": null,
+      "sourceDoc": "하나은행_26년 7월 사전지정운용방법(디폴트옵션)포트폴리오 안내.pdf",
+      "holdings": [
+        { "name": "미래에셋전략배분적격TDF2035", "kind": "fund", "ratioPct": 50, "productGrade": 2, "ratePct": null },
+        { "name": "삼성글로벌EMP적격TDF2035", "kind": "fund", "ratioPct": 25, "productGrade": 3, "ratePct": null },
+        { "name": "농협은행 정기예금 3년", "kind": "deposit", "ratioPct": 25, "productGrade": 5, "ratePct": 3.3 }
+      ]
+    },
+    {
+      "provider": "하나은행",
+      "name": "중립투자형 포트폴리오3",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": 0.188,
+      "docStatedScore": null,
+      "sourceDoc": "하나은행_26년 7월 사전지정운용방법(디폴트옵션)포트폴리오 안내.pdf",
+      "holdings": [
+        { "name": "신한빅사이클자산배분", "kind": "fund", "ratioPct": 75, "productGrade": 2, "ratePct": null },
+        { "name": "DB손해보험 GIC 3년", "kind": "gic", "ratioPct": 25, "productGrade": 5, "ratePct": 4.6 }
+      ]
+    },
+    {
+      "provider": "하나은행",
+      "name": "안정투자형 포트폴리오1",
+      "riskLabel": "저위험",
+      "riskGrade": 4,
+      "totalFeePct": 0.244,
+      "docStatedScore": null,
+      "sourceDoc": "하나은행_26년 7월 사전지정운용방법(디폴트옵션)포트폴리오 안내.pdf",
+      "holdings": [
+        { "name": "하나더넥스트적격TDF2030", "kind": "fund", "ratioPct": 30, "productGrade": 2, "ratePct": null },
+        { "name": "NH-Amundi하나로적격TDF2030", "kind": "fund", "ratioPct": 30, "productGrade": 3, "ratePct": null },
+        { "name": "우리은행 정기예금 3년", "kind": "deposit", "ratioPct": 40, "productGrade": 5, "ratePct": 3.2 }
+      ]
+    },
+    {
+      "provider": "하나은행",
+      "name": "안정투자형 포트폴리오2",
+      "riskLabel": "저위험",
+      "riskGrade": 4,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "하나은행_26년 7월 사전지정운용방법(디폴트옵션)포트폴리오 안내.pdf",
+      "holdings": [
+        { "name": "신한빅사이클자산배분", "kind": "fund", "ratioPct": 50, "productGrade": 2, "ratePct": null },
+        { "name": "교보생명 GIC 3년", "kind": "gic", "ratioPct": 50, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "KB국민은행",
+      "name": "안정투자형 포트폴리오 2_알파드림 2",
+      "riskLabel": "저위험",
+      "riskGrade": 4,
+      "totalFeePct": 0.2796,
+      "docStatedScore": null,
+      "sourceDoc": "1._KB디폴트옵션_상품설명서_안정투자형2_알파드림2_260730.pdf",
+      "holdings": [
+        { "name": "기업은행 퇴직연금 정기예금 디폴트옵션형(3년, 재예치)", "kind": "deposit", "ratioPct": 50, "productGrade": 5, "ratePct": null },
+        { "name": "KB다이나믹 적격TDF 2030증권자 투자신탁", "kind": "fund", "ratioPct": 40, "productGrade": 2, "ratePct": null },
+        { "name": "NH-Amundi 하나로 적격TDF 2035 증권투자신탁", "kind": "fund", "ratioPct": 10, "productGrade": 3, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "KB국민은행",
+      "name": "중립투자형 포트폴리오 2_뿔려드림 2",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": 0.7527,
+      "docStatedScore": null,
+      "sourceDoc": "20260611KB디폴트옵션_상품설명서_중립투자형2-뿔려드림2.pdf",
+      "holdings": [
+        { "name": "미래에셋평생소득TIF혼합자산자투자신탁", "kind": "fund", "ratioPct": 70, "productGrade": 3, "ratePct": null },
+        { "name": "키움불리오글로벌멀티에셋EMP증권자투자신탁", "kind": "fund", "ratioPct": 20, "productGrade": 2, "ratePct": null },
+        { "name": "IBK플레인바닐라EMP증권투자신탁", "kind": "fund", "ratioPct": 10, "productGrade": 2, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "삼성생명",
+      "name": "중립투자형 포트폴리오 1",
+      "riskLabel": "중위험",
+      "riskGrade": 3,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "디폴트옵션 중립투자형 포트폴리오1 핵심설명서.pdf",
+      "holdings": [
+        { "name": "IBK로우코스트적격TDF2055증권자투자신탁", "kind": "fund", "ratioPct": 35, "productGrade": 2, "ratePct": null },
+        { "name": "KB온국민적격TDF2055증권자투자신탁", "kind": "fund", "ratioPct": 35, "productGrade": 2, "ratePct": null },
+        { "name": "금리연동형Ⅳ", "kind": "gic", "ratioPct": 30, "productGrade": 5, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "삼성생명",
+      "name": "적극투자형 포트폴리오 1",
+      "riskLabel": "고위험",
+      "riskGrade": 2,
+      "totalFeePct": null,
+      "docStatedScore": null,
+      "sourceDoc": "디폴트옵션 적극투자형 포트폴리오1 핵심설명서.pdf",
+      "holdings": [
+        { "name": "IBK로우코스트적격TDF2055증권자투자신탁", "kind": "fund", "ratioPct": 35, "productGrade": 2, "ratePct": null },
+        { "name": "KB온국민적격TDF2055증권자투자신탁", "kind": "fund", "ratioPct": 35, "productGrade": 2, "ratePct": null },
+        { "name": "삼성글로벌액티브적격TDF2050증권자투자신탁", "kind": "fund", "ratioPct": 30, "productGrade": 2, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "미래에셋증권",
+      "name": "적극투자형 TDF 1",
+      "riskLabel": "고위험",
+      "riskGrade": 2,
+      "totalFeePct": 0.79,
+      "docStatedScore": null,
+      "sourceDoc": "810001000001.pdf",
+      "holdings": [
+        { "name": "미래에셋전략배분적격TDF2050혼합자산자투자신탁", "kind": "fund", "ratioPct": 100, "productGrade": 2, "ratePct": null }
+      ]
+    },
+    {
+      "provider": "미래에셋증권",
+      "name": "안정투자형 포트폴리오 1",
+      "riskLabel": "저위험",
+      "riskGrade": 4,
+      "totalFeePct": 0.36,
+      "docStatedScore": null,
+      "sourceDoc": "810003000001.pdf",
+      "holdings": [
+        { "name": "미래에셋전략배분적격TDF2045혼합자산자투자신탁", "kind": "fund", "ratioPct": 50, "productGrade": 2, "ratePct": null },
+        { "name": "마이플랜 퇴직연금 정기예금(부산은행)", "kind": "deposit", "ratioPct": 50, "productGrade": 5, "ratePct": 3.25 }
+      ]
+    }
+  ]
+}

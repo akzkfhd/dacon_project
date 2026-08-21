@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>깨움 — 잠자는 퇴직연금 진단</title>
+<style>
+  :root{
+    --ink:#0E1B2A;        /* 깊은 잉크 네이비 */
+    --ink-2:#1B2E44;
+    --paper:#F6F4EF;      /* 차분한 종이 */
+    --paper-2:#FFFFFF;
+    --amber:#E8963A;      /* 각성의 앰버 */
+    --amber-deep:#B96E1D;
+    --line:#DCD8CE;
+    --line-2:#C9C4B7;
+    --txt:#12202F;
+    --txt-2:#5C6672;
+    --txt-3:#8A9099;
+    --danger:#C6472E;
+    --ok:#2E7D5B;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--paper);color:var(--txt);line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:430px;margin:0 auto;background:var(--paper);min-height:100vh;
+    box-shadow:0 0 60px rgba(14,27,42,.08);position:relative;overflow:hidden}
+
+  /* 상단 진행 표시 */
+  .topbar{position:sticky;top:0;z-index:20;background:rgba(246,244,239,.92);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:10px;padding:12px 18px}
+  .brand{font-weight:700;letter-spacing:-.02em;font-size:16px;color:var(--ink)}
+  .brand .dot{color:var(--amber)}
+  .steps{margin-left:auto;display:flex;gap:5px}
+  .steps i{width:22px;height:3px;border-radius:2px;background:var(--line-2);transition:.3s}
+  .steps i.on{background:var(--amber)}
+
+  .screen{display:none;padding:26px 22px 40px;animation:fade .35s ease}
+  .screen.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--amber-deep);font-weight:700;margin-bottom:10px}
+  h1{font-size:27px;line-height:1.28;letter-spacing:-.02em;font-weight:800;color:var(--ink)}
+  h2{font-size:20px;letter-spacing:-.01em;font-weight:700;color:var(--ink);margin-bottom:4px}
+  .sub{color:var(--txt-2);font-size:15px;margin-top:12px}
+
+  .btn{display:block;width:100%;border:none;cursor:pointer;font-family:inherit;
+    background:var(--ink);color:#fff;font-size:16px;font-weight:700;
+    padding:16px;border-radius:var(--radius);margin-top:22px;letter-spacing:-.01em;
+    transition:transform .1s, background .2s}
+  .btn:active{transform:scale(.985)}
+  .btn.amber{background:var(--amber)}
+  .btn.ghost{background:transparent;color:var(--txt-2);border:1px solid var(--line-2);
+    font-weight:600;margin-top:10px}
+  .btn:disabled{opacity:.4;cursor:default}
+
+  .fineprint{font-size:11.5px;color:var(--txt-3);margin-top:16px;line-height:1.6}
+
+  /* S1 히어로 */
+  .hero-num{font-size:62px;font-weight:800;color:var(--amber);letter-spacing:-.04em;
+    line-height:1;margin:20px 0 2px}
+  .hero-stat{background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin-top:20px}
+  .hero-stat .k{font-size:13px;color:var(--txt-2)}
+  .hero-stat .v{font-size:15px;font-weight:700;color:var(--ink);margin-top:2px}
+  .src{font-size:11px;color:var(--txt-3);margin-top:6px}
+  .sleep-viz{display:flex;gap:3px;margin:22px 0 4px;height:56px;align-items:flex-end}
+  .sleep-viz b{flex:1;border-radius:3px 3px 0 0;background:var(--line-2)}
+  .sleep-viz b.hot{background:var(--amber)}
+
+  /* 입력 */
+  .field{margin-top:20px}
+  .field label{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-bottom:9px}
+  .opts{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--line-2);background:var(--paper-2);border-radius:10px;
+    padding:10px 14px;font-size:14px;cursor:pointer;color:var(--txt);transition:.15s;font-family:inherit}
+  .chip.sel{border-color:var(--amber);background:#FBF1E4;color:var(--amber-deep);font-weight:700}
+  .num-in{width:100%;border:1px solid var(--line-2);background:var(--paper-2);border-radius:10px;
+    padding:13px 14px;font-size:16px;font-family:inherit;color:var(--txt)}
+  .num-in:focus{outline:none;border-color:var(--amber)}
+  .hint{font-size:12px;color:var(--txt-3);margin-top:7px}
+
+  /* 진단 */
+  .grade-card{border-radius:var(--radius);padding:20px;color:#fff;margin-top:6px}
+  .grade-card.warn{background:linear-gradient(135deg,#B96E1D,#8A4E12)}
+  .grade-tag{font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.9;text-transform:uppercase}
+  .grade-big{font-size:24px;font-weight:800;margin:6px 0 4px;letter-spacing:-.01em}
+  .grade-desc{font-size:14px;opacity:.92;line-height:1.5}
+
+  .donut-row{display:flex;gap:18px;align-items:center;background:var(--paper-2);
+    border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .donut{width:104px;height:104px;flex-shrink:0}
+  .donut-legend{flex:1}
+  .lg{display:flex;align-items:center;gap:8px;font-size:13px;margin:5px 0}
+  .lg .sw{width:11px;height:11px;border-radius:3px}
+  .lg .val{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+  .reveal{background:#FBF1E4;border:1px solid #EAD3B4;border-radius:12px;
+    padding:14px 16px;margin-top:16px}
+  .reveal .t{font-size:13px;color:var(--amber-deep);font-weight:700;margin-bottom:4px}
+  .reveal .d{font-size:14px;color:var(--txt);line-height:1.5}
+  .reveal .d b{color:var(--danger)}
+
+  /* 시뮬레이터 */
+  .sim-amount{text-align:center;margin:8px 0 4px}
+  .sim-amount .lbl{font-size:13px;color:var(--txt-2)}
+  .sim-amount .big{font-size:40px;font-weight:800;color:var(--ink);letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums;line-height:1.1;margin-top:2px}
+  .sim-amount .band{font-size:12px;color:var(--txt-3);margin-top:3px}
+  .gap-badge{text-align:center;background:#FBF1E4;border:1px solid #EAD3B4;border-radius:12px;
+    padding:12px;margin:16px 0}
+  .gap-badge .k{font-size:12.5px;color:var(--amber-deep);font-weight:600}
+  .gap-badge .v{font-size:26px;font-weight:800;color:var(--amber-deep);letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums}
+  .slider-wrap{margin-top:8px}
+  .slider-labels{display:flex;justify-content:space-between;font-size:11.5px;color:var(--txt-3);margin-bottom:8px}
+  input[type=range]{width:100%;-webkit-appearance:none;height:6px;border-radius:3px;
+    background:linear-gradient(90deg,#7FA8C9,#E8963A);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;
+    border-radius:50%;background:#fff;border:3px solid var(--amber);cursor:pointer;
+    box-shadow:0 2px 8px rgba(14,27,42,.2)}
+  .risk-now{text-align:center;font-size:14px;font-weight:700;color:var(--amber-deep);margin-top:12px}
+  .down-note{font-size:12px;color:var(--txt-2);text-align:center;margin-top:10px;
+    background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .disclaimer{font-size:11px;color:var(--txt-3);text-align:center;margin-top:12px}
+
+  /* 해독기 */
+  .decode-card{background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;margin-top:16px}
+  .plain{font-size:15px;line-height:1.6;color:var(--txt)}
+  .plain b{color:var(--ink)}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .bdg{font-size:12px;padding:6px 11px;border-radius:8px;background:var(--paper);
+    border:1px solid var(--line-2);color:var(--txt-2)}
+  .bdg b{color:var(--ink)}
+  .qa{margin-top:16px}
+  .q{background:var(--ink);color:#fff;border-radius:12px 12px 12px 4px;padding:11px 14px;
+    font-size:13.5px;display:inline-block;max-width:85%}
+  .a{background:var(--paper-2);border:1px solid var(--line);border-radius:12px 12px 4px 12px;
+    padding:12px 14px;font-size:13.5px;margin:8px 0 0 auto;max-width:90%;line-height:1.5}
+  .a .cite{display:block;font-size:11px;color:var(--amber-deep);margin-top:6px;font-weight:600}
+
+  /* 액션 */
+  .action-item{display:flex;gap:12px;background:var(--paper-2);border:1px solid var(--line);
+    border-radius:12px;padding:14px 16px;margin-top:10px}
+  .action-item .no{width:24px;height:24px;border-radius:50%;background:var(--amber);color:#fff;
+    font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .action-item .txt{font-size:14px;line-height:1.5}
+  .action-item .txt b{color:var(--ink)}
+  .ask-box{background:#EEF3F7;border:1px solid #D3E0EA;border-radius:12px;padding:16px;margin-top:18px}
+  .ask-box .t{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
+  .ask-box li{font-size:13.5px;color:var(--txt);margin-left:16px;margin-top:5px}
+
+  .guard{display:flex;align-items:flex-start;gap:8px;background:var(--paper-2);
+    border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:14px}
+  .guard .ic{color:var(--ok);font-weight:800;font-size:14px}
+  .guard .tx{font-size:11.5px;color:var(--txt-2);line-height:1.5}
+
+  .back{position:absolute;top:11px;left:14px;background:none;border:none;font-size:22px;
+    color:var(--txt-2);cursor:pointer;z-index:25;line-height:1;padding:4px}
+
+  /* 챗봇 — 화면에 붙는 부가 레이어 */
+  .ask-panel{margin-top:26px;border-top:1px solid var(--line);padding-top:20px}
+  .ask-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .ask-head .dotai{width:7px;height:7px;border-radius:50%;background:var(--amber)}
+  .ask-head .t{font-size:15px;font-weight:700;color:var(--ink)}
+  .ask-sub{font-size:12.5px;color:var(--txt-3);margin-bottom:14px}
+  .ctx-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;
+    background:#EEF3F7;border:1px solid #D3E0EA;color:#33546E;
+    border-radius:20px;padding:4px 10px;margin:0 5px 6px 0;font-weight:600}
+  .suggest{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+  .sg{text-align:left;background:var(--paper-2);border:1px solid var(--line-2);
+    border-radius:10px;padding:11px 13px;font-size:13.5px;color:var(--txt);
+    cursor:pointer;font-family:inherit;line-height:1.4;transition:.15s}
+  .sg:hover{border-color:var(--amber);color:var(--amber-deep)}
+  .sg .tag{display:block;font-size:10.5px;color:var(--amber-deep);font-weight:700;
+    letter-spacing:.06em;margin-bottom:3px}
+  .thread{margin-top:14px}
+  .msg-u{background:var(--ink);color:#fff;border-radius:12px 12px 4px 12px;
+    padding:11px 14px;font-size:13.5px;margin:12px 0 0 auto;max-width:88%;
+    width:fit-content;line-height:1.5}
+  .msg-a{background:var(--paper-2);border:1px solid var(--line);
+    border-radius:12px 12px 12px 4px;padding:13px 15px;font-size:13.5px;
+    margin-top:9px;max-width:95%;line-height:1.6}
+  .msg-a b{color:var(--ink)}
+  .msg-a .num{color:var(--amber-deep);font-weight:700}
+  .calc-strip{background:#F3F6F2;border:1px solid #DCE5D8;border-radius:9px;
+    padding:9px 11px;margin:10px 0;font-size:11.5px;color:#3D5240;line-height:1.55}
+  .calc-strip .lbl{font-weight:700;color:#2E7D5B;display:block;margin-bottom:3px}
+  .cite2{display:block;font-size:11px;color:var(--amber-deep);margin-top:9px;
+    font-weight:600;line-height:1.45}
+  .typing{display:flex;gap:4px;padding:14px 15px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--line-2);
+    animation:bounce 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.15s}
+  .typing i:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}
+    30%{transform:translateY(-5px);opacity:1}}
+  .ask-in{display:flex;gap:8px;margin-top:14px}
+  .ask-in input{flex:1;border:1px solid var(--line-2);background:var(--paper-2);
+    border-radius:10px;padding:12px 13px;font-size:14px;font-family:inherit;color:var(--txt)}
+  .ask-in input:focus{outline:none;border-color:var(--amber)}
+  .ask-in button{border:none;background:var(--ink);color:#fff;border-radius:10px;
+    padding:0 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .ai-note{font-size:10.5px;color:var(--txt-3);margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span class="brand">깨움<span class="dot">.</span></span>
+    <div class="steps" id="steps">
+      <i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+  </div>
+  <button class="back" id="backBtn" onclick="prev()" style="display:none">‹</button>
+
+  <!-- S1 랜딩 -->
+  <section class="screen active" id="s1">
+    <div class="eyebrow">퇴직연금 500조의 진실</div>
+    <h1>당신의 퇴직연금,<br>지금 사실상 <span style="color:var(--amber)">예금</span>입니다</h1>
+    <div class="sleep-viz">
+      <b style="height:90%"></b><b style="height:85%"></b><b style="height:88%"></b>
+      <b style="height:92%"></b><b style="height:80%"></b><b class="hot" style="height:22%"></b>
+      <b style="height:86%"></b><b style="height:84%"></b>
+    </div>
+    <div class="hero-stat">
+      <div class="k">디폴트옵션 적립금 중 초저위험 상품 비중</div>
+      <div class="v">85.3% — 45조 5,282억 원이 예금에 잠들어 있습니다</div>
+      <div class="src">출처: 금융감독원 · 2026.4 기준 · 저위험 포함 시 90% 초과</div>
+    </div>
+    <p class="sub">'디폴트옵션 지정했으니 끝'이라고 생각하셨나요?<br>
+      1분이면 내 연금이 지금 무엇을 하고 있는지 알 수 있습니다.</p>
+    <button class="btn amber" onclick="go(2)">1분 진단 시작 · 로그인 없음</button>
+    <p class="fineprint">본 서비스는 투자를 권유하지 않으며 정보 제공을 목적으로 합니다.
+      개인 금융정보를 수집·저장하지 않습니다.</p>
+  </section>
+
+  <!-- S2 입력 -->
+  <section class="screen" id="s2">
+    <div class="eyebrow">1분 진단 · 5문항</div>
+    <h2>몇 가지만 알려주세요</h2>
+    <p class="sub" style="margin-top:6px">계좌 연동도, 로그인도 없습니다. 입력값은 저장되지 않습니다.</p>
+
+    <div class="field">
+      <label>현재 나이</label>
+      <input class="num-in" type="number" id="age" value="38" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>예상 은퇴 나이</label>
+      <input class="num-in" type="number" id="retire" value="60" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>계좌 유형</label>
+      <div class="opts" data-single>
+        <button class="chip sel">DC</button>
+        <button class="chip">IRP</button>
+        <button class="chip">둘 다</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>현재 적립금 (만원)</label>
+      <input class="num-in" type="number" id="amount" value="4500" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>지금 어떻게 운용되고 있나요?</label>
+      <div class="opts" data-single style="flex-direction:column">
+        <button class="chip" style="text-align:left;width:100%">운용지시 안 함 (방치 중)</button>
+        <button class="chip sel" style="text-align:left;width:100%">디폴트옵션 · 초저위험/저위험</button>
+        <button class="chip" style="text-align:left;width:100%">디폴트옵션 · 중위험 이상</button>
+        <button class="chip" style="text-align:left;width:100%">잘 모르겠어요</button>
+      </div>
+    </div>
+    <button class="btn" onclick="go(3)">내 연금 진단하기</button>
+  </section>
+
+  <!-- S3 진단 -->
+  <section class="screen" id="s3">
+    <div class="eyebrow">진단 리포트</div>
+    <h2>은퇴까지 22년 남았는데,<br>가장 보수적으로 운용 중입니다</h2>
+
+    <div class="grade-card warn" style="margin-top:16px">
+      <div class="grade-tag">방치 등급 · 주의</div>
+      <div class="grade-big">초저위험 고착</div>
+      <div class="grade-desc">은퇴까지 시간이 충분한데도 복리 효과를 거의 활용하지 못하고 있습니다.</div>
+    </div>
+
+    <h2 style="margin-top:24px;font-size:16px">'초저위험'의 실체</h2>
+    <div class="donut-row">
+      <svg class="donut" viewBox="0 0 42 42">
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="#E4E0D6" stroke-width="6"/>
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="#7FA8C9" stroke-width="6"
+          stroke-dasharray="0 100" stroke-dashoffset="25"/>
+        <text x="21" y="20" text-anchor="middle" font-size="8" font-weight="800" fill="#12202F">0%</text>
+        <text x="21" y="27" text-anchor="middle" font-size="3.4" fill="#5C6672">실제 주식</text>
+      </svg>
+      <div class="donut-legend">
+        <div class="lg"><span class="sw" style="background:#7FA8C9"></span>주식<span class="val">0%</span></div>
+        <div class="lg"><span class="sw" style="background:#B7C4A8"></span>채권·기타<span class="val">0%</span></div>
+        <div class="lg"><span class="sw" style="background:#C9C4B7"></span>예금<span class="val">100%</span></div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="t">라벨이 감추고 있던 것</div>
+      <div class="d">같은 '고위험' 상품도 실제 주식 노출은 제각각입니다.
+        예: 적극투자형2는 라벨은 <b>고위험</b>이지만 실제 주식 노출은 <b>58.5%</b>.
+        라벨만 보고 고르면 진짜 위험을 알 수 없습니다.</div>
+    </div>
+
+    <button class="btn amber" onclick="go(4)">그래서 얼마나 차이 나는지 보기</button>
+    <button class="btn ghost" onclick="go(5)">먼저 내 상품부터 이해하기</button>
+
+    <div class="ask-panel">
+      <div class="ask-head"><span class="dotai"></span><span class="t">이 결과에 대해 물어보기</span></div>
+      <div class="ask-sub">진단에 사용된 정보를 알고 답변합니다</div>
+      <div>
+        <span class="ctx-chip">38세 · 은퇴까지 22년</span>
+        <span class="ctx-chip">적립금 4,500만</span>
+        <span class="ctx-chip">저위험 · 위험자산 60%</span>
+      </div>
+
+      <div class="suggest" id="sgList">
+        <button class="sg" onclick="askQ(0)">
+          <span class="tag">비교</span>제 상품이 위험한 편인가요?</button>
+        <button class="sg" onclick="askQ(1)">
+          <span class="tag">문서</span>이거 원금 손실 날 수 있나요?</button>
+        <button class="sg" onclick="askQ(2)">
+          <span class="tag">계산</span>왜 구성품은 2등급인데 라벨은 4등급인가요?</button>
+      </div>
+
+      <div class="thread" id="thread"></div>
+
+      <div class="ask-in">
+        <input type="text" id="askInput" placeholder="궁금한 점을 입력하세요">
+        <button onclick="askFree()">전송</button>
+      </div>
+      <p class="ai-note">AI가 상품설명서와 진단 결과를 근거로 답변합니다.
+        금액·비율은 계산 엔진이 산출하며 AI가 생성하지 않습니다.
+        근거를 찾지 못하면 답변하지 않습니다.</p>
+    </div>
+  </section>
+
+  <!-- S4 시뮬레이터 -->
+  <section class="screen" id="s4">
+    <div class="eyebrow">격차 시뮬레이터</div>
+    <h2>위험등급을 바꾸면<br>은퇴 시점에 얼마가 달라질까요?</h2>
+
+    <div class="sim-amount" style="margin-top:20px">
+      <div class="lbl">은퇴 시점 예상 적립금 (60세)</div>
+      <div class="big" id="simAmount">1억 2,400만</div>
+      <div class="band" id="simBand">범위 1억 800만 ~ 1억 4,100만</div>
+    </div>
+
+    <div class="slider-wrap">
+      <div class="slider-labels"><span>초저위험</span><span>저위험</span><span>중위험</span><span>고위험</span></div>
+      <input type="range" id="sim" min="0" max="3" value="0" step="1" oninput="simUpdate()">
+      <div class="risk-now" id="riskNow">현재: 초저위험 (지금 당신의 선택)</div>
+    </div>
+
+    <div class="gap-badge">
+      <div class="k">중위험으로 바꾸면</div>
+      <div class="v" id="gapVal">+8,700만 원</div>
+    </div>
+
+    <div class="down-note" id="downNote">
+      시장이 부진할 경우 예상액도 함께 보여드립니다 · 하락 시나리오 1억 400만
+    </div>
+    <p class="disclaimer">과거 수익률은 미래 수익을 보장하지 않습니다.
+      위험등급 단위 시뮬레이션이며 특정 상품을 추천하지 않습니다.</p>
+
+    <button class="btn amber" onclick="go(6)">오늘 뭘 해야 하는지 보기</button>
+  </section>
+
+  <!-- S5 해독기 -->
+  <section class="screen" id="s5">
+    <div class="eyebrow">상품 해독기</div>
+    <h2>이 상품, 도대체 뭔가요?</h2>
+    <p class="sub" style="margin-top:6px">하나은행 디폴트옵션 중립투자형3을 예로 들면:</p>
+
+    <div class="decode-card">
+      <p class="plain">이 상품은 <b>펀드 75% + DB손해보험 GIC(이율보증보험) 25%</b>로
+        구성됩니다. 라벨은 '중위험'이지만, 펀드 안을 들여다보면 실제 <b>주식 노출은 약 45%</b>입니다.
+        원금 손실 가능성이 있으며, 연 4.60%의 보증금리 부분이 안전판 역할을 합니다.</p>
+      <div class="badges">
+        <span class="bdg">실질 주식 <b>45%</b></span>
+        <span class="bdg">합성총보수 <b>연 0.188%</b></span>
+        <span class="bdg">원금보장 <b>일부(25%)</b></span>
+        <span class="bdg">위험등급 <b>3등급</b></span>
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="q">이거 원금 손실 날 수 있나요?</div>
+      <div class="a">네, 펀드 부분(75%)은 손실이 날 수 있습니다. GIC 부분(25%)만 원금이
+        보장됩니다.
+        <span class="cite">근거: 상품설명서 13p '집합투자증권은 예금자보호법에 따라 보호되지 않습니다'</span>
+      </div>
+    </div>
+
+    <button class="btn" onclick="go(6)">내 액션 브리프 보기</button>
+    <button class="btn ghost" onclick="go(4)">격차 시뮬레이터로</button>
+  </section>
+
+  <!-- S6 액션 -->
+  <section class="screen" id="s6">
+    <div class="eyebrow">액션 브리프</div>
+    <h2>오늘, 이 3가지만 하세요</h2>
+
+    <div class="action-item">
+      <div class="no">1</div>
+      <div class="txt"><b>하나원큐 앱 → 퇴직연금 → 디폴트옵션 관리</b>에서
+        현재 운용방법이 초저위험인지 확인하세요.</div>
+    </div>
+    <div class="action-item">
+      <div class="no">2</div>
+      <div class="txt">은퇴까지 22년이 남았다면, <b>한 단계 위험등급</b>을 검토할
+        여유가 있습니다. 상품이 아닌 <b>등급</b> 단위로 결정하세요.</div>
+    </div>
+    <div class="action-item">
+      <div class="no">3</div>
+      <div class="txt">변경 전 반드시 <b>중도 손실·수수료</b>가 없는지
+        판매사에 확인하세요.</div>
+    </div>
+
+    <div class="ask-box">
+      <div class="t">판매사에 이렇게 물어보세요</div>
+      <ul>
+        <li>지금 등급을 올리면 실제 주식 노출이 몇 %가 되나요?</li>
+        <li>변경 시 발생하는 비용이 있나요?</li>
+        <li>제 은퇴 시점에 적합한 등급은 무엇인가요?</li>
+      </ul>
+    </div>
+
+    <div class="guard">
+      <span class="ic">✓</span>
+      <span class="tx">이 브리프는 투자 권유가 아닙니다. 최종 결정은 본인과 판매사 상담을 통해 이루어집니다.
+        본 화면의 내용은 저장되지 않으며 새로고침 시 사라집니다.</span>
+    </div>
+
+    <button class="btn" onclick="go(1)">처음으로</button>
+  </section>
+</div>
+
+<script>
+  let cur = 1;
+  function render(){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById('s'+cur).classList.add('active');
+    const st = document.getElementById('steps').children;
+    for(let i=0;i<st.length;i++) st[i].classList.toggle('on', i < cur);
+    document.getElementById('backBtn').style.display = cur>1 ? 'block':'none';
+    document.querySelector('.wrap').scrollIntoView({behavior:'instant',block:'start'});
+    window.scrollTo(0,0);
+  }
+  function go(n){ cur=n; render(); }
+  function prev(){ if(cur>1){ cur--; render(); } }
+
+  // 칩 선택
+  document.querySelectorAll('.opts[data-single]').forEach(g=>{
+    g.addEventListener('click',e=>{
+      if(!e.target.classList.contains('chip'))return;
+      g.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel'));
+      e.target.classList.add('sel');
+    });
+  });
+
+  // 시뮬레이터 — 실제 계산 로직의 목업 (등급별 기대수익률 반영)
+  const SIM = [
+    {name:'초저위험', mid:12400, lo:11700, hi:13100, rate:2.4},
+    {name:'저위험',   mid:15200, lo:13800, hi:16700, rate:4.0},
+    {name:'중위험',   mid:21100, lo:17900, hi:24800, rate:6.5},
+    {name:'고위험',   mid:27600, lo:20400, hi:35900, rate:9.0},
+  ];
+  function won(man){
+    const eok = Math.floor(man/10000);
+    const rest = man%10000;
+    if(eok>0) return eok+'억 '+(rest>0? rest.toLocaleString()+'만':'');
+    return man.toLocaleString()+'만';
+  }
+  // ── 챗봇: 계산 엔진이 숫자를 확정하고 AI는 설명만 담당하는 구조
+  const QA = [
+    {
+      q:'제 상품이 위험한 편인가요?',
+      calc:'계산 엔진 · 가중평균 3.50 → 저위험(4등급) · 위험자산 60% · 같은 라벨 시장 범위 40~60%',
+      a:'<b>라벨 기준으로는 안전한 편이지만, 실질로는 저위험 구간의 상단입니다.</b><br><br>' +
+        '지금 보유하신 포트폴리오는 위험자산 비중이 <span class="num">60%</span>입니다. ' +
+        '같은 \'저위험\' 라벨 상품들의 시장 범위가 <span class="num">40~60%</span>이니 가장 위쪽에 계신 셈입니다. ' +
+        '실제로 IBK기업은행의 \'중위험\' 상품 중에도 위험자산 60%짜리가 있어, ' +
+        '<b>한 등급 위 라벨과 실질이 같습니다.</b><br><br>' +
+        '다만 38세에 은퇴까지 22년 남으신 상황이라면, 이 수준이 과도하다고 보기는 어렵습니다.',
+      cite:'근거: 하나은행 상품설명서 15p 구성비율 / IBK 상품설명서 1p 위험도별 운용전략표'
+    },
+    {
+      q:'이거 원금 손실 날 수 있나요?',
+      calc:null,
+      a:'<b>네, 일부는 손실이 날 수 있습니다.</b><br><br>' +
+        '보유 상품은 펀드 <span class="num">50%</span> + GIC(이율보증보험) <span class="num">50%</span> 구성입니다. ' +
+        'GIC 부분은 만기 보유 시 약정 이율로 원리금이 보장되지만, ' +
+        '펀드 부분은 원금 손실 가능성이 있습니다.',
+      cite:'근거: 상품설명서 15p「집합투자증권은 예금자보호법에 따라 보호되지 않습니다」'
+    },
+    {
+      q:'왜 구성품은 2등급인데 라벨은 4등급인가요?',
+      calc:'계산 엔진 · (2등급×50%) + (5등급×50%) = 3.50 → 저위험 구간(3.5~4.2)',
+      a:'<b>구성품 등급을 비중대로 평균 내기 때문입니다.</b><br><br>' +
+        '보유 상품은 <span class="num">2등급(고위험) 펀드 50%</span>와 ' +
+        '<span class="num">5등급 GIC 50%</span>로 구성됩니다. ' +
+        '이 둘을 가중평균하면 3.50이 되고, 이 값이 저위험 구간(3.5~4.2)에 들어가 ' +
+        '<b>\'저위험\'으로 표시됩니다.</b><br><br>' +
+        '즉 자산의 절반이 고위험 상품인데도 평균값 때문에 안정적으로 보이는 구조입니다. ' +
+        '이 산정 방식은 사업자가 공시한 공식 그대로입니다.',
+      cite:'근거: IBK 상품설명서 1p「포트폴리오 위험도: 개별상품 위험도를 편입비중으로 가중평균하여 산출」'
+    }
+  ];
+  const FALLBACK = {
+    calc:null,
+    a:'<b>이 질문에 대한 근거를 문서에서 찾지 못했습니다.</b><br><br>' +
+      '추측으로 답변하지 않겠습니다. 해당 내용은 상품설명서 원문이나 ' +
+      '판매사에 직접 확인하시기를 권합니다.',
+    cite:'근거 문서 미발견 · 답변 생성 중단'
+  };
+
+  function renderAnswer(item){
+    const th = document.getElementById('thread');
+    const u = document.createElement('div');
+    u.className = 'msg-u'; u.textContent = item.q;
+    th.appendChild(u);
+
+    const wait = document.createElement('div');
+    wait.className = 'msg-a'; wait.style.padding = '0';
+    wait.innerHTML = '<div class="typing"><i></i><i></i><i></i></div>';
+    th.appendChild(wait);
+    wait.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+    setTimeout(()=>{
+      let html = '';
+      if(item.calc) html += '<div class="calc-strip"><span class="lbl">계산 엔진 결과</span>'+item.calc+'</div>';
+      html += item.a;
+      html += '<span class="cite2">'+item.cite+'</span>';
+      wait.style.padding = '13px 15px';
+      wait.innerHTML = html;
+      wait.scrollIntoView({behavior:'smooth', block:'nearest'});
+    }, 900);
+  }
+  function askQ(i){
+    const item = QA[i];
+    renderAnswer(item);
+    const btns = document.querySelectorAll('#sgList .sg');
+    if(btns[i]) btns[i].style.display = 'none';
+  }
+  function askFree(){
+    const el = document.getElementById('askInput');
+    const v = el.value.trim();
+    if(!v) return;
+    const hit = QA.find(x => v.includes('위험') && x.q.includes('위험한'))
+             || QA.find(x => v.includes('손실') || v.includes('원금'));
+    renderAnswer(hit ? {...hit, q:v} : {...FALLBACK, q:v});
+    el.value = '';
+  }
+
+  function simUpdate(){
+    const i = +document.getElementById('sim').value;
+    const s = SIM[i], base = SIM[0];
+    document.getElementById('simAmount').textContent = won(s.mid);
+    document.getElementById('simBand').textContent = '범위 '+won(s.lo)+' ~ '+won(s.hi);
+    document.getElementById('riskNow').textContent =
+      i===0 ? '현재: 초저위험 (지금 당신의 선택)' : s.name+' 선택 시';
+    const gap = s.mid - base.mid;
+    document.getElementById('gapVal').textContent = (gap>=0?'+':'')+gap.toLocaleString()+'만 원';
+    document.querySelector('.gap-badge .k').textContent =
+      i===0 ? '현재 유지 시' : s.name+'으로 바꾸면';
+    document.getElementById('downNote').textContent =
+      '시장이 부진할 경우 예상액도 함께 보여드립니다 · 하락 시나리오 '+won(s.lo);
+  }
+</script>
+</body>
+</html>

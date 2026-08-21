@@ -1,0 +1,48 @@
+{
+  "provider": "미래에셋증권",
+  "as_of": "2026-07-27",
+  "source_note": "Claude가 원문 PDF를 직접 읽고 수기 전사 (ANTHROPIC_API_KEY 미설정으로 02_normalize_llm.py 대신 사용). 미래에셋증권 PDF는 스캔본이라 pdfplumber 텍스트 레이어가 없다 — 하나은행 사례처럼 사업자에 따라 '텍스트 레이어 존재' 전제 자체가 깨지는 또 다른 케이스. Claude의 이미지 인식으로 직접 판독했다.",
+  "portfolios": [
+    {
+      "name": "적극투자형 TDF 1",
+      "risk_label": "고위험",
+      "risk_grade": 2,
+      "total_fee_pct": 0.79,
+      "source_doc": "810001000001.pdf",
+      "note": "단일상품(100%) 구성. 구성상품 위험등급 '3등급(다소높은위험)'은 6단계 펀드 척도 표기 — risk_engine.py의 FUND_GRADE_TO_DO_GRADE로 환산(3등급→디폴트옵션 2등급). 문서 자체의 개요표에도 '3등급(고위험)'으로 이미 5단계 환산 라벨이 병기되어 있어 교차검증됨.",
+      "holdings": [
+        {
+          "name": "미래에셋전략배분적격TDF2050혼합자산자투자신탁 종류O",
+          "kind": "fund",
+          "ratio_pct": 100,
+          "product_grade": 2,
+          "rate_pct": null
+        }
+      ]
+    },
+    {
+      "name": "안정투자형 포트폴리오 1",
+      "risk_label": "저위험",
+      "risk_grade": 4,
+      "total_fee_pct": 0.36,
+      "source_doc": "810003000001.pdf",
+      "note": "포트폴리오 합성총보수 0.36%는 문서에 직접 명시(구성상품 TDF 자체 보수 0.73%의 50% 가중치만 반영한 값과 일치: 0.73*0.5=0.365≈0.36 — 검증됨). 가중평균 위험도 재계산 결과 3.5로 저위험 구간(3.5~4.2) 경계값과 정확히 일치.",
+      "holdings": [
+        {
+          "name": "미래에셋전략배분적격TDF2045혼합자산자투자신탁 종류O",
+          "kind": "fund",
+          "ratio_pct": 50,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "마이플랜 퇴직연금 정기예금(부산은행)",
+          "kind": "deposit",
+          "ratio_pct": 50,
+          "product_grade": 5,
+          "rate_pct": 3.25
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* mockup/index.html의 디자인 토큰을 그대로 옮겼다. */
+@theme {
+  --color-ink: #0e1b2a;
+  --color-ink-2: #1b2e44;
+  --color-paper: #f6f4ef;
+  --color-paper-2: #ffffff;
+  --color-amber: #e8963a;
+  --color-amber-deep: #b96e1d;
+  --color-line: #dcd8ce;
+  --color-line-2: #c9c4b7;
+  --color-txt: #12202f;
+  --color-txt-2: #5c6672;
+  --color-txt-3: #8a9099;
+  --color-danger: #c6472e;
+  --color-ok: #2e7d5b;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-txt);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+    "Malgun Gothic", sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 접근성: 기능명세서 §4 — 모바일 우선, 최소 16px */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  font-size: 16px;
+}
+
+@keyframes bounce-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: bounce-dot 1.2s infinite;
+}

@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+data/raw/
+data/extracted/
+# API 키는 절대 커밋하지 않는다. 예시 파일만 저장소에 남긴다.
+.env*
+!.env.example
+
+# Next.js
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# 아래 둘은 gitignore하지 않는다 — 런타임이 읽는 배포 자산이다
+# (data/raw·extracted와 달리 중간 산출물이 아니라 서비스의 입력).
+#   data/chunks.json      RAG 검색 대상
+#   public/evidence/**    인용 근거를 표시할 원문 페이지 이미지 (~5MB)
