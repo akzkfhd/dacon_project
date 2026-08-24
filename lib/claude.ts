@@ -41,20 +41,24 @@ const MAX_TOKENS = 2000;
 /**
  * 폴백 경로에서 '이 원문이 질문에 답한다'고 인정할 최소 커버리지.
  *
- * 실측으로 정했다(질문 10종, 사업자 하나은행 기준):
- *   문서 밖 질문 4종  → 0.000 ~ 0.222
- *   문서 안 질문 6종  → 0.375 ~ 0.556 (1종은 0.000, 아래 참고)
- * 두 무리 사이가 비어 있어 그 가운데인 0.3을 잡았다.
+ * 조사·어미 정규화 후 다시 실측했다(질문 13종, 사업자 6곳 교차):
+ *   ② 문서 밖 6종  → 0.250 ~ 0.500
+ *   ③ 문서 안 8종  → 0.333 ~ 1.000
+ * 두 무리가 0.500 한 점에서만 겹쳐 그 바로 위인 0.6을 잡았다.
  *
- * "중도해지하면 불이익이 있나요"는 문서에 있는데도 0.000이 나온다.
- * 상위 5개 원문 중 그 답을 담은 문단이 없어서이며, 임계값 문제가 아니라
- * 검색 문제다. LLM 경로에서는 정상적으로 근거를 찾는다.
+ * 0.3이던 이전 값은 정규화 전 토큰 수(질문당 10개 안팎)에 맞춘 것이다.
+ * 조사를 떼면서 질문이 내용어 두세 개로 줄어 같은 비율이 훨씬 헐거워졌고,
+ * "세금은 얼마나 내나요"에 보수·수수료 문단이, "연금 수령은 언제부터
+ * 가능한가요"에 중도해지 과세 문단이 '공식 문서 근거'로 붙었다.
+ *
+ * 0.6에서 놓치는 것: "환매는 며칠 걸리나요"(0.333 — 답하는 문장에 '며칠'도
+ * '걸리'도 글자로는 없다)와 하나은행의 위험 질문(0.500, 다른 5개 사업자는
+ * 1.000). 근거가 아닌 것을 근거라고 보여주는 쪽이 더 큰 손해이므로
+ * 이 방향의 실패를 택한다.
  *
  * LLM 경로는 모델이 인용한 청크로 등급을 정하므로 이 값을 쓰지 않는다.
- * 키가 없을 때만 쓰이는 보수적 판정이며, 애매하면 no_document로 두는 편이
- * 낫다 — 근거가 아닌 것을 근거라고 보여주는 쪽이 더 큰 손해다.
  */
-const DOCUMENTED_COVERAGE = 0.3;
+const DOCUMENTED_COVERAGE = 0.6;
 
 const AnswerSchema = z.object({
   answer: z
@@ -111,6 +115,22 @@ export interface AskResult {
   relevance: number;
 }
 
+/**
+ * 근거 문장이 보이는 자리에서 발췌를 시작한다.
+ *
+ * 앞머리 180자를 그대로 쓰면 정작 근거가 화면 밖으로 밀린다. KB국민은행
+ * 청크는 앞부분이 "준법감시인 심의필 제2026-…호" 도장 문구라, 위험 질문의
+ * 근거로 뽑혔는데도 발췌에 '위험'이 한 번도 나오지 않았다.
+ * 왜 이것이 근거인지 사용자가 발췌만 보고 납득할 수 있어야 한다.
+ */
+function excerptFrom(chunk: Chunk, sentence?: string): string {
+  if (!sentence) return chunk.text;
+  const at = chunk.text.indexOf(sentence);
+  if (at < 0) return chunk.text; // 공백 정규화된 창(window) 인용이면 못 찾는다
+  const from = Math.max(0, at - 20);
+  return (from > 0 ? "…" : "") + chunk.text.slice(from);
+}
+
 function toCitation(chunk: Chunk, excerptSource?: string): Citation {
   const text = excerptSource ?? chunk.text;
   return {
@@ -123,13 +143,16 @@ function toCitation(chunk: Chunk, excerptSource?: string): Citation {
   };
 }
 
-/** 청크에서 질문 토큰을 가장 많이 포함한 문장을 고른다. 폴백 답변의 인용문이 된다. */
+/**
+ * 청크에서 질문에 가장 잘 맞는 문장을 고른다. 폴백 답변의 인용문이 된다.
+ *
+ * 비교는 tokenize()로 한다. 원시 문자열 포함 검사를 쓰면 조사 하나에 어긋난다 —
+ * 질문의 "예금자보호가"가 문서의 "예금자보호법"과 겹치지 않는다고 판정됐다.
+ * 색인·검색과 같은 정규화를 써야 판정이 일관된다.
+ */
 function bestSentence(chunk: Chunk, question: string): string {
-  const qTokens = new Set(
-    (question.toLowerCase().match(/[가-힣]{2,}|[a-z0-9]+/g) ?? []).filter(
-      (t) => t.length >= 2,
-    ),
-  );
+  const qTokens = new Set(tokenize(question));
+
   const sentences = chunk.text
     .split(/\n|(?<=[.。!?])\s+/)
     .map((s) => s.trim())
@@ -139,20 +162,32 @@ function bestSentence(chunk: Chunk, question: string): string {
     // - "…의 구성 내역입니다": 정규화 청크의 제목 줄
     .filter((s) => !s.endsWith("?") && !/구성 내역입니다\.?$/.test(s));
 
-  if (sentences.length === 0) return chunk.text.slice(0, 160);
-
-  let best = sentences[0];
-  let bestHits = -1;
+  let best = "";
+  let bestHits = 0;
   for (const s of sentences) {
-    const lower = s.toLowerCase();
+    const sTokens = new Set(tokenize(s));
     let hits = 0;
-    for (const t of qTokens) if (lower.includes(t)) hits++;
+    for (const t of qTokens) if (sTokens.has(t)) hits++;
     if (hits > bestHits) {
       best = s;
       bestHits = hits;
     }
   }
-  return best;
+  if (best) return best;
+
+  // 질문 토큰을 담은 문장이 하나도 없다 — 표 형태 청크에서 자주 생긴다.
+  // "예금자보호 대상" 같은 행은 8자라 문장 필터에 걸러지는데, 정작 그 행이
+  // 답이다. 문장 경계를 포기하고 질문 토큰이 처음 나오는 자리를 중심으로
+  // 원문을 잘라 온다. 근거로 제시할 이상 주제와 붙어 있어야 한다.
+  const flat = chunk.text.replace(/\s+/g, " ").trim();
+  for (const t of [...qTokens].sort((a, b) => b.length - a.length)) {
+    const at = flat.indexOf(t);
+    if (at < 0) continue;
+    const from = Math.max(0, at - 40);
+    return flat.slice(from, from + 160).trim();
+  }
+
+  return sentences[0] ?? flat.slice(0, 160);
 }
 
 /**
@@ -343,7 +378,9 @@ export function templateAnswer(
     // no_document면 문서 인용을 붙이지 않는다. 약하게 걸린 문단을 '근거'로
     // 제시하면 문서가 그 답을 뒷받침한다는 오해를 준다.
     citations:
-      tier === "documented" && original ? [toCitation(original.chunk)] : [],
+      tier === "documented" && original
+        ? [toCitation(original.chunk, excerptFrom(original.chunk, quoted ?? undefined))]
+        : [],
     calcStrip: calcStripLines(facts),
     tier,
     refused: false,
@@ -386,14 +423,18 @@ function bestOriginalMatch(
  * → BM25에서 이미 쓰는 tokenize()를 그대로 쓴다. 불용어·한 글자를 걸러내고
  *   bigram으로 조사 변형을 흡수하므로 두 문제가 함께 풀린다.
  */
-function questionCoverage(chunk: Chunk, question: string): number {
+export function questionCoverage(chunk: Chunk, question: string): number {
   const q = new Set(tokenize(question));
   if (q.size === 0) return 0;
 
   const s = new Set(tokenize(bestSentence(chunk, question)));
   let hit = 0;
   for (const t of q) if (s.has(t)) hit++;
-  return hit / q.size;
+
+  // 질문 토큰이 하나뿐일 때 비율을 그대로 쓰면 한 번 스친 것만으로 1.0이 된다.
+  // "세금은 얼마나 내나요"는 정규화 후 유효 토큰이 '세금' 하나다.
+  // 분모에 하한 2를 두어 한 단어 일치가 만점이 되는 것을 막는다.
+  return hit / Math.max(q.size, 2);
 }
 
 /**
@@ -586,7 +627,9 @@ export async function generateAnswer(
     const citedIds = new Set(parsed.citedChunkIds);
     const citations = hits
       .filter((h) => citedIds.has(h.chunk.id))
-      .map((h) => toCitation(h.chunk));
+      // LLM 경로도 같은 규칙으로 발췌한다 — 모델이 인용한 청크의 어느
+      // 대목이 질문과 맞는지 화면에서 바로 보여야 한다.
+      .map((h) => toCitation(h.chunk, excerptFrom(h.chunk, bestSentence(h.chunk, question))));
 
     const tier = tierFromCitations(citations);
 

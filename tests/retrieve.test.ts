@@ -12,15 +12,62 @@ import {
   tokenize,
   citationLabel,
   RELEVANCE_THRESHOLD,
-  LOW_CONFIDENCE_RELEVANCE,
 } from "../lib/retrieve.ts";
 import { chunks } from "../lib/data.ts";
 
-test("토크나이저가 어절과 문자 bigram을 함께 낸다", () => {
+test("토크나이저가 어간과 문자 bigram을 함께 낸다", () => {
   const tokens = tokenize("수익률은");
-  assert.ok(tokens.includes("수익률은"), "어절 전체");
+  assert.ok(tokens.includes("수익률"), "조사를 뗀 어간");
   assert.ok(tokens.includes("수익"), "bigram");
   assert.ok(tokens.includes("익률"), "bigram");
+  assert.ok(!tokens.includes("수익률은"), "조사가 붙은 표기형은 남기지 않는다");
+});
+
+test("조사가 만든 가짜 희소성을 제거한다 — 회귀 방지", () => {
+  // "상품이"는 df=4라 idf 4.43을 받는데 "상품"은 df=352로 idf 0.07이다.
+  // 같은 명사인데 조사 하나로 60배가 갈린다. 정규화 전에는
+  // "제 상품이 위험한 편인가요?"의 11.4점 중 10.2점이 '상품이'와 '품이'에서
+  // 나와, 위험 고지 문단(위험 10회)이 변경절차 문단(위험 1회)에 밀렸다.
+  for (const [surface, stem] of [
+    ["상품이", "상품"], ["수익률이", "수익률"], ["보수는", "보수"],
+    ["원금을", "원금"], ["펀드에서", "펀드"], ["손실로", "손실"],
+  ]) {
+    const t = tokenize(surface);
+    assert.ok(t.includes(stem), `${surface} → ${stem}`);
+    assert.ok(!t.includes(surface), `${surface} 표기형이 남으면 안 된다`);
+  }
+});
+
+test("어간이 한 글자가 되면 조사를 떼지 않는다", () => {
+  // 물가·성과·결과·평가·제도는 모두 조사 음절로 끝나지만 진짜 명사다.
+  for (const w of ["물가", "성과", "결과", "평가", "제도", "한도", "제한"]) {
+    assert.ok(tokenize(w).includes(w), `${w}는 원형이 남아야 한다`);
+  }
+});
+
+test("내용 없는 종결어미 어절은 통째로 버린다", () => {
+  // '편인가요'가 남기는 bigram '인가'·'가요'는 문서의 "가능한가요"·
+  // "무엇인가요"와 맞아, 정작 주제어 '위험'(idf 0.52)을 눌렀다.
+  const t = tokenize("제 상품이 위험한 편인가요?");
+  assert.deepEqual([...new Set(t)].sort(), ["상품", "위험"]);
+});
+
+test("한 단어가 토큰 여러 개로 부풀지 않는다", () => {
+  // '발생할'을 남기면 발생할·발생·생할 세 개가 되어, 그 한 단어만 가진
+  // 문장이 원금·손실·발생을 모두 가진 문장과 동점이 된다.
+  assert.deepEqual([...new Set(tokenize("원금 손실이 발생할 수 있나요"))].sort(),
+    ["발생", "손실", "원금"]);
+});
+
+test("어미 정규화가 원금 손실 근거를 바로잡는다 — 회귀 방지", () => {
+  const r = search("원금 손실이 발생할 수 있나요", {
+    k: 5, minOriginalText: 3, preferProvider: "하나은행",
+  });
+  // 상위 후보가 실제로 원금 손실을 다루어야 한다. 과세·비용 문단이 아니라.
+  assert.ok(
+    r.hits.slice(0, 3).every((h) => /원금|손실/.test(h.chunk.text)),
+    "상위 3건이 모두 원금·손실을 언급해야 한다",
+  );
 });
 
 test("한 글자 한글 어절은 색인하지 않는다", () => {
@@ -92,13 +139,22 @@ test("문서와 무관한 질문은 거부한다", () => {
 test("계산 엔진으로 답할 질문은 문서 근거가 약해도 거부하지 않는다", () => {
   // 은퇴 시점 예상액은 상품설명서에 있을 리 없다. 문서 관련도가 낮은 게
   // 정상이며, 그렇다고 거부하면 답할 수 있는 질문을 묵살하게 된다.
-  // 대신 LOW_CONFIDENCE_RELEVANCE 아래이므로 답변에 한계가 표시된다.
+  //
+  // 이 질문이 '문서에 답이 없다'고 판정되는 것은 relevance가 아니라
+  // 답변 등급(no_document)이 맡는다 — answer.test.ts 참조. relevance는
+  // 어휘 겹침이라 이런 질문에서도 꽤 높게 나올 수 있다.
   const r = search("은퇴할 때 얼마나 모이나요");
   assert.ok(!r.belowThreshold, `relevance=${r.relevance}`);
-  assert.ok(
-    r.relevance < LOW_CONFIDENCE_RELEVANCE,
-    "문서 근거가 약하다고 표시되어야 한다",
-  );
+});
+
+test("relevance는 ①과 나머지의 경계에서만 신뢰한다", () => {
+  // 실측(정규화 후): ① 0.000~0.151, ②③ 0.039~1.000.
+  // 두 무리가 겹치므로 relevance로 ②와 ③을 가를 수 없다. 이 겹침은
+  // 조사 정규화 이전에도 같은 폭으로 있었다(① 0.000~0.158, ② 0.053~).
+  // 확실한 무관 질문은 여전히 게이트에서 걸러진다.
+  for (const q of ["오늘 점심 뭐 먹지", "강아지 사료 추천해줘", "비트코인 지금 사도 되나요"]) {
+    assert.ok(search(q).belowThreshold, `"${q}" relevance=${search(q).relevance}`);
+  }
 });
 
 test("빈 질의는 거부한다", () => {

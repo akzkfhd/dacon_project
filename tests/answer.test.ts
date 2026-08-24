@@ -14,6 +14,7 @@ import {
   classifyIntent,
   refusalResult,
   withTopicParticle,
+  questionCoverage,
 } from "../lib/claude.ts";
 
 /** 라우트와 같은 조건으로 검색한다 — 원문 쿼터 포함. */
@@ -218,5 +219,56 @@ test("스캔 PDF 사업자는 documented가 될 수 없다 — 좌표가 없다"
   // 핵심은 근거가 붙었다면 반드시 마킹 가능한 원문이라는 것.
   if (r.tier === "documented") {
     assert.ok(r.citations.every((c) => c.evidence));
+  }
+});
+
+
+test("커버리지 임계값이 ②와 ③을 가른다 — 보정 고정", () => {
+  // DOCUMENTED_COVERAGE = 0.6의 근거. 이 분리가 무너지면 폴백이
+  // 주제만 스친 문단을 '공식 문서 근거'로 제시하게 된다.
+  const cov = (q: string, provider = "하나은행") => {
+    const { hits } = retrieve(q, provider);
+    let best = 0;
+    for (const h of hits) {
+      if (h.chunk.sourceType !== "pdf_text" || !h.chunk.evidence) continue;
+      best = Math.max(best, questionCoverage(h.chunk, q));
+    }
+    return best;
+  };
+
+  // ② 관련은 있으나 문서가 답하지 않는 질문 — 0.6 미만이어야 한다
+  for (const q of [
+    "은퇴할 때 얼마나 모이나요",
+    "연금 수령은 언제부터 가능한가요",
+    "세금은 얼마나 내나요",
+    "물가 오르면 어떻게 되나요",
+  ]) {
+    assert.ok(cov(q) < 0.6, `②인데 ${cov(q).toFixed(3)} — "${q}"`);
+  }
+
+  // ③ 문서가 실제로 답하는 질문 — 0.6 이상이어야 한다
+  for (const q of [
+    "원금 손실이 발생할 수 있나요",
+    "예금자보호가 되나요",
+    "구성상품이 뭔가요",
+    "중도해지하면 불이익이 있나요",
+  ]) {
+    assert.ok(cov(q) >= 0.6, `③인데 ${cov(q).toFixed(3)} — "${q}"`);
+  }
+});
+
+test("사용자 질문 '내 상품이 위험한가'가 원문 근거를 얻는다 — 회귀 방지", () => {
+  // 배포본에서 이 질문에 변경절차 문단이 근거로 붙었다. 조사 '이'가 만든
+  // 가짜 희소성 때문이었고, 정규화 후 6개 사업자 중 5곳이 커버리지 1.000이다.
+  const q = "제 상품이 위험한 편인가요?";
+  for (const provider of ["IBK기업은행", "삼성생명", "KB국민은행", "신한투자증권"]) {
+    const { hits, relevance } = retrieve(q, provider);
+    const facts = buildCalcFacts({ ...PROFILE, provider, currentLabel: "중위험" });
+    const r = templateAnswer(q, facts, hits, relevance);
+    assert.equal(r.tier, "documented", `${provider}: ${r.answer.slice(0, 60)}`);
+    assert.ok(
+      r.citations.every((c) => /위험/.test(c.excerpt)),
+      `${provider}: 근거가 위험을 다루지 않는다`,
+    );
   }
 });
