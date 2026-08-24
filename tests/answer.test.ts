@@ -272,3 +272,90 @@ test("사용자 질문 '내 상품이 위험한가'가 원문 근거를 얻는�
     );
   }
 });
+
+
+const ALL_PROVIDERS = ["하나은행", "IBK기업은행", "삼성생명", "KB국민은행", "신한투자증권"];
+
+test("근거 발췌에 상용구를 인용하지 않는다", () => {
+  // "준법감시인 심의필 제2026-…호, 유효기간 …"은 모든 문서에 붙는 도장 문구다.
+  // 질문과 무관하게 걸릴 수 있는데, 이걸 근거라고 보여주면 의미가 없다.
+  for (const q of [
+    "예금자보호가 되나요?",
+    "원금 손실이 발생할 수 있나요",
+    "구성상품이 뭔가요",
+    "제 상품이 위험한 편인가요?",
+  ]) {
+    for (const provider of ALL_PROVIDERS) {
+      const { hits, relevance } = retrieve(q, provider);
+      const facts = buildCalcFacts({ ...PROFILE, provider, currentLabel: "중위험" });
+      for (const c of templateAnswer(q, facts, hits, relevance).citations) {
+        assert.ok(
+          !/준법감시인|심의필|유효기간|투자광고/.test(c.excerpt),
+          `${provider} "${q}": 상용구가 근거로 나왔다 — ${c.excerpt.slice(0, 60)}`,
+        );
+      }
+    }
+  }
+});
+
+test("인용문은 문장 가운데서 끊기지 않는다 — 하드 랩 복원", () => {
+  // PDF 본문은 고정 폭으로 줄바꿈되어 한 문장이 여러 줄에 걸친다.
+  // 복원하지 않으면 "상품 위험도 가중평균)에 따라 … 편입될 수" 처럼
+  // 괄호 반쪽으로 시작해 어미 없이 끊긴 조각이 인용됐다.
+  const q = "원금 손실이 발생할 수 있나요";
+  const { hits, relevance } = retrieve(q, "IBK기업은행");
+  const facts = buildCalcFacts({ ...PROFILE, provider: "IBK기업은행", currentLabel: "중위험" });
+  const r = templateAnswer(q, facts, hits, relevance);
+
+  assert.equal(r.tier, "documented");
+  const quoted = r.answer.match(/적혀 있습니다: "([^"]+)"/)?.[1];
+  assert.ok(quoted, `인용문을 찾지 못했다 — ${r.answer.slice(0, 120)}`);
+  assert.match(quoted!, /(습니다|합니다|됩니다|입니다)\.?$/, `조각이 인용됐다: ${quoted}`);
+});
+
+test("근거 발췌는 인용한 문장에서 시작한다", () => {
+  // 앞뒤로 늘리면 직전 문장의 꼬리("…어떻게 되나요? 펀드는…")나
+  // 뒤이은 무관한 FAQ 문항이 딸려 온다.
+  const q = "원금 손실이 발생할 수 있나요";
+  for (const provider of ALL_PROVIDERS) {
+    const { hits, relevance } = retrieve(q, provider);
+    const facts = buildCalcFacts({ ...PROFILE, provider, currentLabel: "중위험" });
+    const r = templateAnswer(q, facts, hits, relevance);
+    const quoted = r.answer.match(/적혀 있습니다: "([^"]+)"/)?.[1];
+    if (!quoted || !r.citations.length) continue;
+    assert.ok(
+      r.citations[0].excerpt.startsWith(quoted.slice(0, 40)),
+      `${provider}: 발췌가 인용문과 다른 데서 시작한다 — ${r.citations[0].excerpt.slice(0, 60)}`,
+    );
+  }
+});
+
+test("자료에 없는 사업자·등급 조합은 그 사실을 밝힌다", () => {
+  // "문서에서 근거를 못 찾았다"고만 하면 문서를 뒤졌는데 없더라는 뜻으로
+  // 읽힌다. 실제로는 계산할 상품 자체가 데이터에 없다.
+  //
+  // 사업자는 6곳으로 좁혔지만 등급별 빈칸은 남는다. IBK기업은행은
+  // 저·중·고위험만 있고 초저위험 포트폴리오가 없다 — 폼에서 실제로
+  // 만들 수 있는 조합이므로 이 경로는 계속 살아 있다.
+  const facts = buildCalcFacts({ ...PROFILE, provider: "IBK기업은행", currentLabel: "초저위험" });
+  assert.equal(facts.portfolio, null, "전제: 이 조합은 자료에 없다");
+
+  const q = "왜 구성품은 2등급인데 라벨은 저위험인가요?";
+  const { hits, relevance } = retrieve(q, "IBK기업은행");
+  const r = templateAnswer(q, facts, hits, relevance);
+
+  assert.equal(r.refused, true);
+  assert.match(r.answer, /자료에 없습니다/);
+  assert.ok(!/문서에서 찾지 못했습니다/.test(r.answer));
+});
+
+
+test("구성 설명에도 받침에 맞는 조사를 붙인다", () => {
+  // "…포트폴리오 2호은(는) 집합투자증권 60%…"가 실제로 출력됐다.
+  // 한 군데만 조사를 하드코딩해 두면 이렇게 새어 나온다.
+  const facts = buildCalcFacts({ ...PROFILE, provider: "IBK기업은행", currentLabel: "중위험" });
+  const q = "구성상품이 뭔가요";
+  const { hits, relevance } = retrieve(q, "IBK기업은행");
+  const r = templateAnswer(q, facts, hits, relevance);
+  assert.ok(!r.answer.includes("은(는)"), r.answer.slice(0, 120));
+});

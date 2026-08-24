@@ -18,11 +18,9 @@ import {
  * 사라진다. 이 화면에 다시 오면 직전 입력이 복원되어 수정할 수 있다.
  */
 export default function ProfileForm({
-  providersWithDetail,
-  otherProviders,
+  providers,
 }: {
-  providersWithDetail: string[];
-  otherProviders: string[];
+  providers: string[];
 }) {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
@@ -114,25 +112,16 @@ export default function ProfileForm({
           }
           className="w-full rounded-[10px] border border-line-2 bg-paper-2 p-[13px_14px] text-txt"
         >
-          <optgroup label="구성상품 상세 확보 (계산 과정까지 답변)">
-            {providersWithDetail.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="공시 데이터만 확보">
-            {otherProviders.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </optgroup>
+          {providers.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
           <option value="모름">모름</option>
         </select>
         <span className="mt-1.5 block text-[12px] text-txt-3">
-          &lsquo;구성상품 상세 확보&rsquo; 사업자를 고르면 라벨이 어떻게
-          산출됐는지 계산 과정까지 답변에 나옵니다.
+          상품설명서를 확보한 {providers.length}개 사업자입니다. 구성상품·보수와
+          원문 근거를 함께 보여 드릴 수 있는 곳만 실었습니다.
         </span>
       </Field>
 

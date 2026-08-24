@@ -29,6 +29,28 @@ export interface UserProfile {
 
 export const RISK_LABELS = ["초저위험", "저위험", "중위험", "고위험"] as const;
 
+/**
+ * 선택 가능한 사업자.
+ *
+ * 상품설명서를 확보해 구성상품·보수·근거 문서를 실제로 제시할 수 있는 곳만
+ * 둔다. 전체 41개 사업자를 다 보여 주면, 자료가 없는 곳을 고른 사용자는
+ * 무엇을 물어도 "확보한 자료에 없습니다"만 듣게 된다. 고를 수 있다는 것이
+ * 답할 수 있다는 뜻이어야 한다.
+ *
+ * 이 목록은 lib/portfolios.ts의 providersWithPortfolios와 반드시 일치한다
+ * (tests/profile.test.ts가 어긋남을 잡는다). 여기에 따로 적어 두는 이유는
+ * 이 모듈이 브라우저 번들에 들어가기 때문이다 — 데이터 JSON을 import하면
+ * 포트폴리오 전체가 클라이언트로 딸려 간다.
+ */
+export const SUPPORTED_PROVIDERS = [
+  "KB국민은행",
+  "IBK기업은행",
+  "삼성생명",
+  "신한투자증권",
+  "미래에셋증권",
+  "하나은행",
+] as const;
+
 export const DEFAULT_PROFILE: UserProfile = {
   age: 38,
   retireAge: 60,
@@ -67,8 +89,11 @@ export function validateProfile(raw: unknown): UserProfile | string {
     return "연간 납입액은 0 이상이어야 합니다.";
   }
 
+  // 자료가 없는 사업자는 '모름'과 같게 취급한다. 폼에서는 고를 수 없지만
+  // 세션에 남은 예전 값이나 API 직접 호출로 들어올 수 있다.
   const provider =
-    typeof r.provider === "string" && r.provider && r.provider !== "모름"
+    typeof r.provider === "string" &&
+    (SUPPORTED_PROVIDERS as readonly string[]).includes(r.provider)
       ? r.provider
       : null;
 

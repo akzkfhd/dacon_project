@@ -115,22 +115,6 @@ export interface AskResult {
   relevance: number;
 }
 
-/**
- * 근거 문장이 보이는 자리에서 발췌를 시작한다.
- *
- * 앞머리 180자를 그대로 쓰면 정작 근거가 화면 밖으로 밀린다. KB국민은행
- * 청크는 앞부분이 "준법감시인 심의필 제2026-…호" 도장 문구라, 위험 질문의
- * 근거로 뽑혔는데도 발췌에 '위험'이 한 번도 나오지 않았다.
- * 왜 이것이 근거인지 사용자가 발췌만 보고 납득할 수 있어야 한다.
- */
-function excerptFrom(chunk: Chunk, sentence?: string): string {
-  if (!sentence) return chunk.text;
-  const at = chunk.text.indexOf(sentence);
-  if (at < 0) return chunk.text; // 공백 정규화된 창(window) 인용이면 못 찾는다
-  const from = Math.max(0, at - 20);
-  return (from > 0 ? "…" : "") + chunk.text.slice(from);
-}
-
 function toCitation(chunk: Chunk, excerptSource?: string): Citation {
   const text = excerptSource ?? chunk.text;
   return {
@@ -138,9 +122,98 @@ function toCitation(chunk: Chunk, excerptSource?: string): Citation {
     label: citationLabel(chunk),
     provider: chunk.provider,
     sourceType: chunk.sourceType,
+    // 발췌는 근거 문장 그 자체다. 앞뒤로 늘리면 남의 문장이 딸려 와
+    // "…어떻게 되나요? 펀드는…" 처럼 반토막으로 시작하거나, 뒤이은
+    // "Q7. 정기예금 만기시 재예치 되나요?" 같은 무관한 문항까지 붙는다.
+    // 페이지 전체 맥락은 마킹된 원문 이미지가 보여 준다.
     excerpt: text.length > 180 ? `${text.slice(0, 180)}…` : text,
     evidence: chunk.evidence,
   };
+}
+
+/**
+ * 근거로 인용할 수 없는 상용구. 문서마다 붙는 도장 문구라 질문과 무관하게
+ * 걸릴 수 있는데, 이걸 "공식 문서에 이렇게 적혀 있습니다"라고 보여주면
+ * 근거로서 아무 의미가 없다.
+ */
+const BOILERPLATE = /준법감시인|심의필|유효기간|투자광고|준수사항|홈페이지에 고시/;
+
+/**
+ * 한 문장으로 볼 최대 길이. 이 문서군의 실제 본문 문장은 50~150자다.
+ * 그보다 훨씬 길면 줄바꿈 복원 과정에서 표가 통째로 붙은 것이다.
+ */
+const SENTENCE_MAX = 220;
+
+/**
+ * 청크 원문을 문장 단위로 복원한다.
+ *
+ * PDF 본문은 고정 폭으로 하드 랩되어 있어 한 문장이 여러 줄에 걸친다.
+ * 줄바꿈에서 그냥 자르면 문장 가운데 토막이 인용된다. 실제로 위험 질문의
+ * 근거가 이렇게 나왔다:
+ *   "상품 위험도 가중평균)에 따라 … 위험도가 높은 상품이 편입될 수"
+ * 괄호 반쪽으로 시작해 어미도 없이 끊긴다. 원문 세 줄을 이어야 비로소
+ *   ": 사전지정운용방법 포트폴리오 위험도는 투자자 성향과 같거나 낮지만,
+ *     … 위험도가 높은 상품이 편입될 수 있습니다."
+ * 라는 완결된 문장이 된다.
+ *
+ * 종결로 끝나지 않은 줄은 다음 줄과 잇는다. "2) 환율변동 위험" 같은
+ * 항목 제목도 뒤 설명과 붙어, 무엇에 대한 설명인지까지 함께 인용된다.
+ */
+interface DocSentence {
+  text: string;
+  /** 종결부호나 종결어미로 닫혔는가. 표에서 끌어온 조각은 false다. */
+  complete: boolean;
+}
+
+/**
+ * 이 줄에서 문장이 닫혔는가.
+ *
+ * 번호 매김("… 상품 유형 1.")을 마침표로 오인하면 안 된다. 실제로 표를
+ * 300자에서 자른 덩어리가 "1."로 끝난 덕에 완결된 문장으로 분류돼,
+ * 위험등급표 한 뭉치가 근거로 인용됐다.
+ */
+function isComplete(x: string): boolean {
+  if (/\d\.$/.test(x)) return false;
+  return /[.!?]$/.test(x) || /[다요음]\.?$/.test(x);
+}
+
+function documentSentences(text: string): DocSentence[] {
+  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+
+  // 완결 여부는 블록이 '어떻게 닫혔는지'로 정한다. 다 만들어진 문자열의
+  // 끝만 보면, 길이 제한에 걸려 잘린 표 덩어리가 우연한 마침표 하나로
+  // 완결된 문장 행세를 한다.
+  const merged: DocSentence[] = [];
+  let buf = "";
+  for (const line of lines) {
+    buf = buf ? `${buf} ${line}` : line;
+    if (isComplete(line)) {
+      // 종결어미로 닫혔더라도 지나치게 길면 문장이 아니라 표 한 뭉치다.
+      // "상세 정보 ▣ 전체 구성 상품 … 예금자보호법에 따라 보호되지 않습니다."
+      // 처럼 표 전체가 마지막 줄 하나 때문에 400자짜리 '완결 문장'이 됐고,
+      // 그 덩어리가 "구성 상품 중 원리금 보장형 상품만 예금자보호 대상"이라는
+      // 진짜 답을 동점 우선순위에서 밀어냈다.
+      merged.push({ text: buf, complete: buf.length <= SENTENCE_MAX });
+      buf = "";
+    } else if (buf.length > 300) {
+      // 표는 끝내 닫히지 않는다. 여기서 끊긴 덩어리는 문장이 아니다.
+      merged.push({ text: buf, complete: false });
+      buf = "";
+    }
+  }
+  if (buf) merged.push({ text: buf, complete: false });
+
+  return merged
+    .flatMap((m) =>
+      m.text
+        .split(/(?<=[.。!?])\s+/)
+        .map((x) => ({ text: x.trim(), complete: m.complete })),
+    )
+    .filter((d) => d.text.length >= 15)
+    // 물음표로 끝나는 문장은 문서의 FAQ 질문이라 답이 아니다.
+    .filter((d) => !d.text.endsWith("?"))
+    .filter((d) => !/구성 내역입니다\.?$/.test(d.text))
+    .filter((d) => !BOILERPLATE.test(d.text));
 }
 
 /**
@@ -151,29 +224,57 @@ function toCitation(chunk: Chunk, excerptSource?: string): Citation {
  * 색인·검색과 같은 정규화를 써야 판정이 일관된다.
  */
 function bestSentence(chunk: Chunk, question: string): string {
+  return bestEvidence(chunk, question).text;
+}
+
+function bestEvidence(
+  chunk: Chunk,
+  question: string,
+): { text: string; complete: boolean } {
   const qTokens = new Set(tokenize(question));
+  const all = documentSentences(chunk.text);
 
-  const sentences = chunk.text
-    .split(/\n|(?<=[.。!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 15)
-    // 정보가 없는 문장은 인용 후보에서 뺀다.
-    // - 물음표로 끝나는 문장: 문서의 FAQ 질문이라 답이 아니다
-    // - "…의 구성 내역입니다": 정규화 청크의 제목 줄
-    .filter((s) => !s.endsWith("?") && !/구성 내역입니다\.?$/.test(s));
+  // 완결된 문장을 먼저 본다. 표 조각은 완결 문장이 하나도 안 맞을 때만 쓴다.
+  // 표는 줄이 종결되지 않아 300자 안전판에서 통째로 잘리는데, 그 덩어리가
+  // 질문 토큰을 더 많이 담는다는 이유로 이기면 위험등급표 한 뭉치가
+  // "문서에는 이렇게 적혀 있습니다"로 인용된다.
+  const pick = (pool: DocSentence[]) => {
+    let best = "";
+    let bestHits = 0;
+    let bestDensity = 0;
+    let bestComplete = false;
+    for (const d of pool) {
+      const sTokens = tokenize(d.text);
+      const uniq = new Set(sTokens);
 
-  let best = "";
-  let bestHits = 0;
-  for (const s of sentences) {
-    const sTokens = new Set(tokenize(s));
-    let hits = 0;
-    for (const t of qTokens) if (sTokens.has(t)) hits++;
-    if (hits > bestHits) {
-      best = s;
-      bestHits = hits;
+      let hits = 0;
+      for (const t of qTokens) if (uniq.has(t)) hits++;
+      if (hits === 0) continue;
+
+      // 같은 개념을 맞힌 문장이 여럿이면 그 주제를 더 많이 다루는 쪽을 고른다.
+      // 문서 순서로 갈리면 엉뚱한 항목이 뽑힌다 — 위험 질문에서
+      // "3) 만기불일치 위험 : 원리금보장상품의 만기일 이전 해지…"가
+      // "4) 성향불일치 위험 : … 위험도가 높은 상품이 편입될 수 있습니다"를
+      // 눌렀다. 둘 다 '상품'과 '위험'을 한 번씩 담아 2:2 동점이었지만,
+      // 뒤엣것은 두 단어가 각각 네댓 번 나오는 진짜 해당 항목이다.
+      const density = sTokens.filter((t) => qTokens.has(t)).length;
+
+      const better =
+        hits > bestHits ||
+        (hits === bestHits && d.complete && !bestComplete) ||
+        (hits === bestHits && d.complete === bestComplete && density > bestDensity);
+      if (better) {
+        best = d.text;
+        bestHits = hits;
+        bestDensity = density;
+        bestComplete = d.complete;
+      }
     }
-  }
-  if (best) return best;
+    return best ? { text: best, complete: bestComplete } : null;
+  };
+
+  const picked = pick(all);
+  if (picked) return picked;
 
   // 질문 토큰을 담은 문장이 하나도 없다 — 표 형태 청크에서 자주 생긴다.
   // "예금자보호 대상" 같은 행은 8자라 문장 필터에 걸러지는데, 정작 그 행이
@@ -184,10 +285,10 @@ function bestSentence(chunk: Chunk, question: string): string {
     const at = flat.indexOf(t);
     if (at < 0) continue;
     const from = Math.max(0, at - 40);
-    return flat.slice(from, from + 160).trim();
+    return { text: flat.slice(from, from + 160).trim(), complete: false };
   }
 
-  return sentences[0] ?? flat.slice(0, 160);
+  return { text: all[0]?.text ?? flat.slice(0, 160), complete: false };
 }
 
 /**
@@ -242,11 +343,13 @@ function tierFromCitations(citations: Citation[]): AnswerTier {
 export function refusalResult(
   facts: CalcFacts,
   relevance: number,
+  reason?: string,
 ): AskResult {
   return {
     answer:
+      reason ??
       "이 질문에 대한 근거를 확보한 문서에서 찾지 못했습니다. 추측으로 답변하지 않겠습니다. " +
-      "상품설명서 원문이나 가입하신 판매사에 직접 확인하시기를 권합니다.",
+        "상품설명서 원문이나 가입하신 판매사에 직접 확인하시기를 권합니다.",
     citations: [],
     calcStrip: calcStripLines(facts),
     tier: "unrelated",
@@ -326,7 +429,7 @@ export function templateAnswer(
       .map((h) => `${h.name} ${h.ratioPct}%`)
       .join(", ");
     parts.push(
-      `${pf.detail.provider} ${pf.detail.name}은(는) ${holdings}로 구성되며 라벨은 '${pf.detail.riskLabel}', 위험자산 비중은 ${pf.risk.riskyAssetPct}%입니다.`,
+      `${pf.detail.provider} ${withTopicParticle(pf.detail.name)} ${holdings}로 구성되며 라벨은 '${pf.detail.riskLabel}', 위험자산 비중은 ${pf.risk.riskyAssetPct}%입니다.`,
     );
     // 의도를 특정하지 못했다면, 검색이 걸렸어도 정작 물어본 것에 대한 답이
     // 문서에 없을 수 있다. 템플릿은 그 불일치를 스스로 판별하지 못하므로
@@ -344,7 +447,7 @@ export function templateAnswer(
   // 발생할 수 있나요"에서 1위 원문은 겹침 1개(실격)였고, 3위 원문이
   // "해지 시 원금손실이 발생할 수 있습니다"로 겹침 2개였다.
   // → 후보 원문을 모두 훑어 가장 잘 맞는 것을 고른다.
-  const original = bestOriginalMatch(hits, question);
+  const original = bestOriginalMatch(hits, question, facts.profile.provider);
   const quoted = original
     ? sentenceAnswersQuestion(original.chunk, question)
     : null;
@@ -361,6 +464,20 @@ export function templateAnswer(
   }
 
   if (parts.length === 0) {
+    // 답하지 못한 이유가 둘인데 메시지가 하나면 사용자를 오도한다.
+    // 확보한 상품설명서는 6개 사업자뿐이고, 그 안에서도 라벨별로 빈칸이 있다.
+    // 그 조합을 고른 사용자에게 "문서에서 근거를 못 찾았다"고만 말하면
+    // 문서를 뒤졌는데 없더라는 뜻으로 읽힌다. 실제로는 계산할 상품 자체가
+    // 데이터에 없다.
+    if (!facts.portfolio && facts.profile.provider && facts.profile.currentLabel) {
+      return refusalResult(
+        facts,
+        relevance,
+        `${facts.profile.provider}의 '${facts.profile.currentLabel}' 디폴트옵션 상품은 ` +
+          "아직 이 서비스가 확보한 자료에 없습니다. 상품설명서를 수집한 사업자에 한해 " +
+          "구성상품·보수·근거 문서를 제시할 수 있습니다.",
+      );
+    }
     return refusalResult(facts, relevance);
   }
 
@@ -379,7 +496,7 @@ export function templateAnswer(
     // 제시하면 문서가 그 답을 뒷받침한다는 오해를 준다.
     citations:
       tier === "documented" && original
-        ? [toCitation(original.chunk, excerptFrom(original.chunk, quoted ?? undefined))]
+        ? [toCitation(original.chunk, quoted ?? undefined)]
         : [],
     calcStrip: calcStripLines(facts),
     tier,
@@ -398,19 +515,47 @@ export function templateAnswer(
 function bestOriginalMatch(
   hits: ScoredChunk[],
   question: string,
+  preferProvider?: string | null,
 ): ScoredChunk | null {
-  let best: ScoredChunk | null = null;
-  let bestCoverage = 0;
+  // 커버리지가 우선이고, 완결된 문장인지는 동점일 때만 본다.
+  //
+  // 완결 문장을 무조건 앞세워 봤더니 "예금자보호가 되나요?"가 망가졌다.
+  // 이 질문의 정답은 "구성 상품 중 원리금 보장형 상품만 예금자보호 대상"이라는
+  // 표인데, 표에는 종결어미가 없어 뒤로 밀리고 대신 관련 없는 구성상품
+  // 목록이 근거로 올라왔다. 표가 곧 답인 문서가 실제로 있다.
+  const scan = (pool: ScoredChunk[]) => {
+    let best: ScoredChunk | null = null;
+    let bestCoverage = 0;
+    let bestComplete = false;
 
-  for (const h of hits) {
-    if (h.chunk.sourceType !== "pdf_text" || !h.chunk.evidence) continue;
-    const coverage = questionCoverage(h.chunk, question);
-    if (coverage > bestCoverage) {
-      best = h;
-      bestCoverage = coverage;
+    for (const h of pool) {
+      if (h.chunk.sourceType !== "pdf_text" || !h.chunk.evidence) continue;
+      const coverage = questionCoverage(h.chunk, question);
+      if (coverage === 0) continue;
+
+      const complete = bestEvidence(h.chunk, question).complete;
+      if (
+        coverage > bestCoverage ||
+        (coverage === bestCoverage && complete && !bestComplete)
+      ) {
+        best = h;
+        bestCoverage = coverage;
+        bestComplete = complete;
+      }
     }
+    return best ? { hit: best, coverage: bestCoverage } : null;
+  };
+
+  // 가입하신 사업자의 문서로 답할 수 있으면 그것을 쓴다.
+  // 사업자마다 문구가 비슷해 남의 문서가 커버리지에서 앞설 때가 있는데,
+  // "제 상품"을 물었는데 다른 회사 상품설명서를 근거로 다는 것은 오해를 부른다.
+  // 본인 문서가 기준에 못 미칠 때만 다른 사업자 문서로 넘어가고,
+  // 그때는 답변이 "○○ 문서에는" 이라고 출처를 밝힌다.
+  if (preferProvider) {
+    const own = scan(hits.filter((h) => h.chunk.provider === preferProvider));
+    if (own && own.coverage >= DOCUMENTED_COVERAGE) return own.hit;
   }
-  return best;
+  return scan(hits)?.hit ?? null;
 }
 
 /**
@@ -629,7 +774,7 @@ export async function generateAnswer(
       .filter((h) => citedIds.has(h.chunk.id))
       // LLM 경로도 같은 규칙으로 발췌한다 — 모델이 인용한 청크의 어느
       // 대목이 질문과 맞는지 화면에서 바로 보여야 한다.
-      .map((h) => toCitation(h.chunk, excerptFrom(h.chunk, bestSentence(h.chunk, question))));
+      .map((h) => toCitation(h.chunk, bestSentence(h.chunk, question)));
 
     const tier = tierFromCitations(citations);
 

@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_PROFILE,
   RISK_LABELS,
+  SUPPORTED_PROVIDERS,
   validateProfile,
   loadProfile,
   saveProfile,
@@ -147,4 +148,31 @@ test("서버에서는 세션 접근이 조용히 무시된다", () => {
   assert.equal(loadProfile(), null);
   assert.doesNotThrow(() => saveProfile(VALID));
   assert.doesNotThrow(() => clearProfile());
+});
+
+
+test("선택 가능한 사업자는 실제로 자료가 있는 사업자와 일치한다", async () => {
+  // profile.ts는 브라우저 번들에 들어가므로 포트폴리오 JSON을 import하지 않고
+  // 목록을 따로 적어 둔다. 그래서 데이터가 늘거나 줄면 조용히 어긋날 수 있다.
+  const { providersWithPortfolios } = await import("../lib/portfolios.ts");
+  assert.deepEqual(
+    [...SUPPORTED_PROVIDERS].sort(),
+    [...providersWithPortfolios].sort(),
+    "SUPPORTED_PROVIDERS와 실제 포트폴리오 보유 사업자가 다르다",
+  );
+});
+
+test("자료 없는 사업자는 '모름'으로 떨어뜨린다", () => {
+  // 폼에서는 고를 수 없지만 세션에 남은 예전 값이나 API 직접 호출로 들어온다.
+  // 그대로 통과시키면 무엇을 물어도 답을 못 받는 상태가 된다.
+  const base = {
+    age: 38, retireAge: 60, balanceMan: 4500, annualContributionMan: 0,
+    currentLabel: "중위험",
+  };
+  const stale = validateProfile({ ...base, provider: "농협은행" });
+  assert.notEqual(typeof stale, "string");
+  assert.equal((stale as UserProfile).provider, null);
+
+  const ok = validateProfile({ ...base, provider: "IBK기업은행" });
+  assert.equal((ok as UserProfile).provider, "IBK기업은행");
 });
