@@ -262,8 +262,25 @@ function idf(df: number, total: number): number {
 
 export interface SearchOptions {
   k?: number;
-  /** 이 사업자의 청크에 가산점. 사용자가 가입한 곳의 문서를 우선 보여준다. */
-  preferProvider?: string;
+  /**
+   * 이 사업자의 청크만 검색 대상으로 삼는다 (가산점이 아니라 하드 필터).
+   *
+   * 가산점(×1.35)이었을 때 실제로 이런 일이 있었다: IBK기업은행 가입자가
+   * "예금자보호가 되나요"를 물었는데 근거로 삼성생명 상품설명서가 달렸다.
+   * 사업자마다 상품설명서 문구가 비슷하고 분량이 달라(신한 117 vs IBK 43 원문
+   * 청크), 남의 문서가 BM25에서 앞서면 35% 가산점으로는 뒤집히지 않는다.
+   *
+   * 예금자보호·원금손실·보수처럼 사업자마다 답이 다른 질문에서 남의 문서를
+   * 근거로 다는 것은 단순한 순위 오류가 아니라 오답이다. 그래서 우선순위가
+   * 아니라 범위로 다룬다 — 가입 사업자를 밝혔으면 그 사업자의 문서에서만
+   * 답하고, 거기에 근거가 없으면 근거 게이트가 답변을 거부한다.
+   *
+   * 청크는 텍스트 해시로 중복 제거되지만 사업자를 가로지르는 중복은 0건이라
+   * (05_build_chunks.py의 dedup) 이 필터가 남의 문서를 지우는 일은 없다.
+   *
+   * 사업자를 '모름'으로 둔 사용자는 이 값이 없으므로 전체 문서를 검색한다.
+   */
+  provider?: string;
   /**
    * 원문(pdf_text) 청크를 최소 몇 개 보장할지.
    *
@@ -280,7 +297,7 @@ export interface SearchOptions {
 }
 
 export function search(query: string, options: SearchOptions = {}): RetrievalResult {
-  const { k = 5, preferProvider, minOriginalText = 0 } = options;
+  const { k = 5, provider, minOriginalText = 0 } = options;
   const index = getIndex();
   const queryTokens = tokenize(query);
 
@@ -291,7 +308,15 @@ export function search(query: string, options: SearchOptions = {}): RetrievalRes
   // 질의 내 중복 제거 — 같은 토큰을 두 번 세면 점수가 부풀려진다
   const uniqueTerms = [...new Set(queryTokens)];
 
-  const scored = index.docs.map((doc) => {
+  // 사업자를 밝혔으면 그 사업자의 문서만 후보다.
+  // df·avgLength 같은 말뭉치 통계는 전체 색인 것을 그대로 쓴다 — 사업자별로
+  // 다시 계산하면 문서 수가 적은 사업자에서 IDF가 요동쳐 relevance 임계값
+  // (0.06, 전체 말뭉치 기준 실측치)의 의미가 사업자마다 달라진다.
+  const candidates = provider
+    ? index.docs.filter((doc) => doc.chunk.provider === provider)
+    : index.docs;
+
+  const scored = candidates.map((doc) => {
     let score = 0;
     for (const term of uniqueTerms) {
       const tf = doc.tf.get(term);
@@ -301,14 +326,6 @@ export function search(query: string, options: SearchOptions = {}): RetrievalRes
       score += termIdf * ((tf * (K1 + 1)) / (tf + K1 * norm));
     }
 
-    // 사업자 일치 가산점.
-    // 10%로는 부족했다 — "왜 내 라벨이 저위험인가요"를 물었는데 다른 사업자의
-    // 구성내역 청크가 상위를 채우는 일이 실제로 발생했다. 그 청크들이
-    // "라벨은 저위험(4등급)입니다" 같은 문장을 그대로 갖고 있어 BM25 점수가
-    // 높기 때문이다. 사용자가 가입한 곳의 문서를 확실히 끌어올린다.
-    if (preferProvider && doc.chunk.provider === preferProvider) {
-      score *= 1.35;
-    }
     return { chunk: doc.chunk, score };
   });
 

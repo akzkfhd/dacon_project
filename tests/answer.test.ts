@@ -19,7 +19,7 @@ import {
 
 /** 라우트와 같은 조건으로 검색한다 — 원문 쿼터 포함. */
 function retrieve(q: string, provider = "하나은행") {
-  return search(q, { k: 5, minOriginalText: 3, preferProvider: provider });
+  return search(q, { k: 5, minOriginalText: 3, provider: provider });
 }
 
 const PROFILE: UserProfile = {
@@ -93,7 +93,7 @@ test("폴백 답변이 실제로 쓸 만하다 — 키 없이도 데모가 돈�
 test("폴백 답변이 계산 엔진 숫자를 인용한다", () => {
   const facts = buildCalcFacts(PROFILE);
   const q = "제 상품이 위험한 편인가요?";
-  const { hits, relevance } = search(q, { preferProvider: "하나은행" });
+  const { hits, relevance } = search(q, { provider: "하나은행" });
   const result = templateAnswer(q, facts, hits, relevance);
 
   // 폴백은 정의상 계산 엔진 값만 쓰므로 검증을 통과해야 한다
@@ -147,7 +147,7 @@ test("구성 질문은 구성 답변으로 분류된다 — 라벨 질문과 구
 test("구성 질문에는 불확실 단서를 붙이지 않는다", () => {
   const facts = buildCalcFacts(PROFILE);
   const q = "구성상품이 뭔가요";
-  const { hits, relevance } = search(q, { preferProvider: "하나은행" });
+  const { hits, relevance } = search(q, { provider: "하나은행" });
   const r = templateAnswer(q, facts, hits, relevance);
   assert.ok(!r.answer.includes("직접 나와 있지 않을 수 있습니다"));
 });
@@ -215,11 +215,14 @@ test("스캔 PDF 사업자는 documented가 될 수 없다 — 좌표가 없다"
   const q = "구성상품이 뭔가요";
   const { hits, relevance } = retrieve(q, "미래에셋증권");
   const r = templateAnswer(q, facts, hits, relevance);
-  // 미래에셋 원문이 없으므로 다른 사업자 원문이 인용될 수는 있다.
-  // 핵심은 근거가 붙었다면 반드시 마킹 가능한 원문이라는 것.
-  if (r.tier === "documented") {
-    assert.ok(r.citations.every((c) => c.evidence));
-  }
+  // 검색이 가입 사업자로 제한되므로 미래에셋 가입자에게는 마킹 가능한
+  // 원문 자체가 존재하지 않는다 — 남의 사업자 원문으로 메우지 않는다.
+  assert.ok(
+    hits.every((h) => h.chunk.provider === "미래에셋증권"),
+    "다른 사업자 청크가 섞이면 안 된다",
+  );
+  assert.notEqual(r.tier, "documented", "원문 좌표가 없으면 documented일 수 없다");
+  assert.equal(r.citations.length, 0);
 });
 
 
@@ -247,13 +250,20 @@ test("커버리지 임계값이 ②와 ③을 가른다 — 보정 고정", () =
   }
 
   // ③ 문서가 실제로 답하는 질문 — 0.6 이상이어야 한다
-  for (const q of [
-    "원금 손실이 발생할 수 있나요",
-    "예금자보호가 되나요",
-    "구성상품이 뭔가요",
-    "중도해지하면 불이익이 있나요",
-  ]) {
-    assert.ok(cov(q) >= 0.6, `③인데 ${cov(q).toFixed(3)} — "${q}"`);
+  //
+  // 사업자를 함께 적는다. 근거 검색이 가입 사업자의 문서로 제한되므로
+  // ③인지 ②인지는 사업자마다 다르다 — "중도해지하면 불이익이 있나요"는
+  // KB국민은행 문서에만 정면으로 답하는 문단이 있고(0.667), 나머지 사업자
+  // 문서에서는 0.33~0.44에 그친다. 예전에는 하나은행 가입자에게도 이 질문이
+  // ③으로 나왔는데, 그건 KB 문서가 근거로 새어 들어왔기 때문이다.
+  for (const [q, p] of [
+    ["원금 손실이 발생할 수 있나요", "하나은행"],
+    ["예금자보호가 되나요", "하나은행"],
+    ["예금자보호가 되나요", "IBK기업은행"],
+    ["구성상품이 뭔가요", "하나은행"],
+    ["중도해지하면 불이익이 있나요", "KB국민은행"],
+  ] as const) {
+    assert.ok(cov(q, p) >= 0.6, `③인데 ${cov(q, p).toFixed(3)} — "${q}"(${p})`);
   }
 });
 

@@ -54,6 +54,11 @@ export async function POST(request: Request) {
   const facts = buildCalcFacts(profile);
 
   // ② 문서 검색
+  // provider: 가입 사업자를 밝혔으면 그 사업자의 문서만 검색한다(하드 필터).
+  // 사업자마다 상품설명서 문구가 비슷해 가산점만으로는 남의 문서가 근거로
+  // 올라오는 일을 막지 못했다 — 예금자보호 여부처럼 사업자마다 답이 다른
+  // 질문에서 그것은 순위 오류가 아니라 오답이다.
+  //
   // minOriginalText: 원문(pdf_text) 자리를 3개 예약한다.
   // 구성내역 정규화본 15개가 짧고 밀도가 높아 상위를 독점하는데, 페이지
   // 좌표는 원문에만 있다. 예약하지 않으면 '공식문서 기반 근거'를 제시할
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
   const { hits, relevance, belowThreshold } = search(question, {
     k: 5,
     minOriginalText: 3,
-    preferProvider: profile.provider ?? undefined,
+    provider: profile.provider ?? undefined,
   });
 
   // ③ 근거 게이트 — 프롬프트가 아니라 코드가 거부를 결정한다

@@ -61,7 +61,7 @@ test("한 단어가 토큰 여러 개로 부풀지 않는다", () => {
 
 test("어미 정규화가 원금 손실 근거를 바로잡는다 — 회귀 방지", () => {
   const r = search("원금 손실이 발생할 수 있나요", {
-    k: 5, minOriginalText: 3, preferProvider: "하나은행",
+    k: 5, minOriginalText: 3, provider: "하나은행",
   });
   // 상위 후보가 실제로 원금 손실을 다루어야 한다. 과세·비용 문단이 아니라.
   assert.ok(
@@ -169,17 +169,40 @@ test("relevance는 0~1 범위이고 임계값과 일관된다", () => {
   assert.equal(r.belowThreshold, r.relevance < RELEVANCE_THRESHOLD);
 });
 
-test("사업자 가산점이 해당 사업자 문서를 끌어올린다", () => {
-  const plain = search("구성상품 비중", { k: 10 });
-  const boosted = search("구성상품 비중", { k: 10, preferProvider: "삼성생명" });
+test("사업자를 밝히면 그 사업자의 문서만 근거가 된다", () => {
+  for (const provider of ["삼성생명", "IBK기업은행", "하나은행"]) {
+    const r = search("구성상품 비중", { k: 10, provider });
+    assert.ok(r.hits.length > 0, `${provider}: 결과가 나와야 한다`);
+    assert.ok(
+      r.hits.every((h) => h.chunk.provider === provider),
+      `${provider}: 다른 사업자 청크가 섞였다`,
+    );
+  }
+});
 
-  const countSamsung = (hits: typeof plain.hits) =>
-    hits.filter((h) => h.chunk.provider === "삼성생명").length;
-
+test("IBK 가입자의 예금자보호 질문에 삼성생명 문서가 달리지 않는다 — 회귀 방지", () => {
+  // 가산점(×1.35) 방식이었을 때 실제로 발생한 오답이다. 사업자마다
+  // 예금자보호 여부가 다르므로 남의 문서를 근거로 다는 것은 순위 오류가
+  // 아니라 오답이다.
+  const r = search("예금자보호가 되나요", {
+    k: 5,
+    minOriginalText: 3,
+    provider: "IBK기업은행",
+  });
+  assert.ok(r.hits.length > 0);
   assert.ok(
-    countSamsung(boosted.hits) >= countSamsung(plain.hits),
-    "가산점을 준 사업자의 청크가 줄어들면 안 된다",
+    r.hits.every((h) => h.chunk.provider === "IBK기업은행"),
+    `IBK 외 사업자 근거: ${r.hits
+      .filter((h) => h.chunk.provider !== "IBK기업은행")
+      .map((h) => h.chunk.provider)
+      .join(", ")}`,
   );
+});
+
+test("사업자를 모르면 전체 문서를 검색한다", () => {
+  const r = search("구성상품 비중", { k: 10 });
+  const providers = new Set(r.hits.map((h) => h.chunk.provider));
+  assert.ok(providers.size > 1, "사업자 필터가 없으면 여러 사업자가 나와야 한다");
 });
 
 test("모든 청크가 인용 가능한 출처를 갖는다", () => {
@@ -211,8 +234,8 @@ test("원문 쿼터가 정규화본의 상위 독점을 뚫는다", () => {
     "합성총보수는 얼마인가요",
     "구성상품이 뭔가요",
   ]) {
-    const plain = search(q, { k: 5, preferProvider: "하나은행" });
-    const quota = search(q, { k: 5, minOriginalText: 3, preferProvider: "하나은행" });
+    const plain = search(q, { k: 5, provider: "하나은행" });
+    const quota = search(q, { k: 5, minOriginalText: 3, provider: "하나은행" });
 
     const countOriginal = (r: typeof plain) =>
       r.hits.filter((h) => h.chunk.sourceType === "pdf_text").length;
@@ -238,7 +261,7 @@ test("원문이 부족하면 있는 만큼만 넣는다", () => {
   const r = search("구성상품이 뭔가요", {
     k: 5,
     minOriginalText: 5,
-    preferProvider: "미래에셋증권",
+    provider: "미래에셋증권",
   });
   assert.ok(r.hits.length > 0, "결과 자체는 나와야 한다");
   assert.ok(r.hits.length <= 5);

@@ -547,10 +547,10 @@ function bestOriginalMatch(
   };
 
   // 가입하신 사업자의 문서로 답할 수 있으면 그것을 쓴다.
-  // 사업자마다 문구가 비슷해 남의 문서가 커버리지에서 앞설 때가 있는데,
-  // "제 상품"을 물었는데 다른 회사 상품설명서를 근거로 다는 것은 오해를 부른다.
-  // 본인 문서가 기준에 못 미칠 때만 다른 사업자 문서로 넘어가고,
-  // 그때는 답변이 "○○ 문서에는" 이라고 출처를 밝힌다.
+  // 사업자를 밝힌 경우 검색(lib/retrieve.ts의 provider 필터)에서 이미 남의
+  // 문서가 걸러지므로 이 선호는 대개 무의미하지만, 사업자를 모른 채 호출되는
+  // 경로(테스트·직접 호출)를 위해 남겨 둔다. 본인 문서가 기준에 못 미치면
+  // 다른 사업자 문서로 넘어가고, 그때는 답변이 "○○ 문서에는"이라고 출처를 밝힌다.
   if (preferProvider) {
     const own = scan(hits.filter((h) => h.chunk.provider === preferProvider));
     if (own && own.coverage >= DOCUMENTED_COVERAGE) return own.hit;
