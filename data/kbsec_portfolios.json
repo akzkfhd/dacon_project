@@ -1,0 +1,125 @@
+{
+  "provider": "KB증권",
+  "as_of": "2022-10-31",
+  "source_note": "Claude가 원문 PDF(KB증권/Default_1669193286004.pdf)를 직접 읽고 수기 전사. 이 문서는 표·본문 모두 텍스트 레이어가 살아 있고 포트폴리오 4종의 구성상품·비중·위험등급·수수료가 3~6p에 표로 명시되어 있어 추론이 필요한 항목이 없었다. 문서에 적힌 '설정기준일 2022.10.31'을 as_of로 둔다 — 다른 사업자 자료(2026년)보다 오래된 최초 승인 안내서이므로, 비교공시 엑셀(data/products.json, 2026 1분기)의 보수·수익률과는 시점이 다르다.",
+  "verification_note": "구성상품 위험등급이 이미 디폴트옵션 5단계 등급(예: '2등급 (고위험)', '5등급 (초저위험)')으로 표기되어 있어 FUND_GRADE_TO_DO_GRADE 환산이 필요 없었다. 문서는 가중평균 점수를 숫자로 적지 않아 docStatedScore는 null이지만, 네 포트폴리오 모두 엔진 재계산 라벨이 문서 표기 라벨과 일치한다(초저위험 5.00 / 저위험 3.75 / 중위험 2.75 / 고위험 2.00). 합성총보수도 구성상품 보수의 가중평균과 일치해(0.25×0.760+0.25×0.380=0.285 등) 전사 오류가 없음을 교차 확인했다.",
+  "portfolios": [
+    {
+      "name": "디폴트옵션 초저위험 포트폴리오",
+      "risk_label": "초저위험",
+      "risk_grade": 5,
+      "total_fee_pct": 0.0,
+      "source_doc": "Default_1669193286004.pdf",
+      "note": "3p. 전액 원리금보장 예금 2종. 예금자보호 대상으로 명시된 유일한 KB증권 포트폴리오이며, 표지 표(1p)에도 '원리금 보장형 · 보호'로 구분되어 있다.",
+      "holdings": [
+        {
+          "name": "한국증권금융정기예금 3년",
+          "kind": "deposit",
+          "ratio_pct": 50,
+          "product_grade": 5,
+          "rate_pct": null
+        },
+        {
+          "name": "국민은행정기예금 3년",
+          "kind": "deposit",
+          "ratio_pct": 50,
+          "product_grade": 5,
+          "rate_pct": null
+        }
+      ]
+    },
+    {
+      "name": "디폴트옵션 저위험 포트폴리오 2호",
+      "risk_label": "저위험",
+      "risk_grade": 4,
+      "total_fee_pct": 0.285,
+      "source_doc": "Default_1669193286004.pdf",
+      "note": "4p. 예금 50% + 펀드 50%. 공시명(data/products.json)으로는 'KB증권디폴트옵션안정투자형포트폴리오2'에 해당한다 — 문서는 위험라벨로, 비교공시는 투자유형으로 같은 상품을 부른다.",
+      "holdings": [
+        {
+          "name": "미래에셋평생소득 TIF 혼합자산투자신탁종류O",
+          "kind": "fund",
+          "ratio_pct": 25,
+          "product_grade": 3,
+          "rate_pct": null
+        },
+        {
+          "name": "삼성ETF를담은TDF2030 증권자투자신탁[혼합-재간접형]O(디폴트옵션)",
+          "kind": "fund",
+          "ratio_pct": 25,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "국민은행정기예금 3년",
+          "kind": "deposit",
+          "ratio_pct": 50,
+          "product_grade": 5,
+          "rate_pct": null
+        }
+      ]
+    },
+    {
+      "name": "디폴트옵션 중위험 포트폴리오 2호",
+      "risk_label": "중위험",
+      "risk_grade": 3,
+      "total_fee_pct": 0.432,
+      "source_doc": "Default_1669193286004.pdf",
+      "note": "5p. 예금 25% + TDF 75%. 구성 펀드 둘 다 2등급(고위험)인데 예금 비중 25%가 가중평균을 2.75로 끌어내려 '중위험' 라벨이 된다 — 라벨과 실질의 간극을 보여주는 사례.",
+      "holdings": [
+        {
+          "name": "KB온국민TDF2040증권투자신탁(주식혼합-재간접형)O-퇴직",
+          "kind": "fund",
+          "ratio_pct": 40,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "키움키워드림TDF2040 증권투자신탁제1호[혼합-재간접형]O(퇴직연금)",
+          "kind": "fund",
+          "ratio_pct": 35,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "국민은행정기예금 3년",
+          "kind": "deposit",
+          "ratio_pct": 25,
+          "product_grade": 5,
+          "rate_pct": null
+        }
+      ]
+    },
+    {
+      "name": "디폴트옵션 고위험 포트폴리오 2호",
+      "risk_label": "고위험",
+      "risk_grade": 2,
+      "total_fee_pct": 0.773,
+      "source_doc": "Default_1669193286004.pdf",
+      "note": "6p. 원리금보장상품이 없어 전액 원금 손실 가능성이 있고, 문서도 '예금자보호법에 따라 예금보험공사가 보호하지 않습니다'라고 명시한다.",
+      "holdings": [
+        {
+          "name": "KB온국민TDF2050증권투자신탁(주식혼합-재간접형)O-퇴직",
+          "kind": "fund",
+          "ratio_pct": 40,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "한화LifePlusTDF2050 증권자투자신탁(혼합-재간접형)O(퇴직연금-디폴트옵션)",
+          "kind": "fund",
+          "ratio_pct": 30,
+          "product_grade": 2,
+          "rate_pct": null
+        },
+        {
+          "name": "미래에셋전략배분TDF2050 혼합자산투자신탁종류O",
+          "kind": "fund",
+          "ratio_pct": 30,
+          "product_grade": 2,
+          "rate_pct": null
+        }
+      ]
+    }
+  ]
+}

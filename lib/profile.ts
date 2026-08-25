@@ -28,6 +28,32 @@ export interface UserProfile {
 }
 
 export const RISK_LABELS = ["초저위험", "저위험", "중위험", "고위험"] as const;
+export type RiskLabel = (typeof RISK_LABELS)[number];
+
+/**
+ * 화면에 보여 줄 투자유형 이름.
+ *
+ * 저장·계산·검색에는 절대 쓰지 않는다. 내부 값은 공시 용어(초저위험…고위험)
+ * 그대로여야 한다 — products.json·portfolios.json·chunks.json과 위험등급
+ * 엔진이 모두 그 문자열을 키로 쓰고, 상품설명서 원문에도 그 단어가 적혀 있다.
+ * 여기서 바꾸는 것은 사용자에게 보이는 이름뿐이다.
+ *
+ * '위험등급'이라는 말이 상품 선택을 위험도 순위처럼 읽히게 해서, 사업자들이
+ * 실제로 쓰는 투자유형 이름(안정형·안정투자형·중립투자형·적극투자형)으로
+ * 표시한다.
+ */
+export const INVESTMENT_TYPE_LABEL: Record<RiskLabel, string> = {
+  초저위험: "안정형",
+  저위험: "안정투자형",
+  중위험: "중립투자형",
+  고위험: "적극투자형",
+};
+
+/** 공시 라벨을 화면 표시용 투자유형 이름으로 바꾼다. 모르는 값은 그대로 둔다. */
+export function investmentTypeName(label: string | null): string | null {
+  if (label === null) return null;
+  return INVESTMENT_TYPE_LABEL[label as RiskLabel] ?? label;
+}
 
 /**
  * 선택 가능한 사업자.
@@ -49,6 +75,7 @@ export const SUPPORTED_PROVIDERS = [
   "신한투자증권",
   "미래에셋증권",
   "하나은행",
+  "KB증권",
 ] as const;
 
 export const DEFAULT_PROFILE: UserProfile = {
