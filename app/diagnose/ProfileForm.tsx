@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DEFAULT_PROFILE,
+  INVESTMENT_TYPE_LABEL,
   RISK_LABELS,
   loadProfile,
   saveProfile,
@@ -125,15 +126,20 @@ export default function ProfileForm({
         </span>
       </Field>
 
-      <Field label="지금 어떤 위험등급으로 운용되고 있나요?" className="mt-5">
+      <Field label="지금 어떤 투자유형으로 운용되고 있나요?" className="mt-5">
         <div className="flex flex-wrap gap-2">
+          {/*
+            화면에는 투자유형 이름을 보여 주되 저장되는 값은 공시 라벨
+            그대로다. 계산 엔진·상품 데이터·문서 검색이 전부 공시 라벨을
+            키로 쓰기 때문에, 여기서 값을 바꾸면 진단이 통째로 어긋난다.
+          */}
           {RISK_LABELS.map((l) => (
             <Chip
               key={l}
               selected={profile.currentLabel === l}
               onClick={() => set("currentLabel", l)}
             >
-              {l}
+              {INVESTMENT_TYPE_LABEL[l]}
             </Chip>
           ))}
           <Chip
@@ -145,9 +151,9 @@ export default function ProfileForm({
         </div>
         {profile.currentLabel === null && (
           <span className="mt-2 block text-[12px] text-txt-3">
-            모르는 것이 정상입니다. 대부분의 가입자가 자신의 운용 등급을 모릅니다.
-            등급 없이도 진단은 가능하며, 가장 보수적인 초저위험을 기준으로
-            계산합니다.
+            모르는 것이 정상입니다. 대부분의 가입자가 자신의 운용 유형을
+            모릅니다. 유형 없이도 진단은 가능하며, 가장 보수적인
+            {" "}{INVESTMENT_TYPE_LABEL["초저위험"]}을 기준으로 계산합니다.
           </span>
         )}
       </Field>

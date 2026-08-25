@@ -47,6 +47,11 @@ MIN_CHARS = 60
 
 # 파일명 → 사업자. 파일명 규칙이 사업자마다 완전히 달라 패턴 매칭이 필요하다.
 PROVIDER_PATTERNS = [
+    # KB증권 파일명(Default_1669193286004.pdf)에는 사업자를 알 수 있는 단서가
+    # 없다. 다운로드 시각으로 보이는 숫자뿐이라 파일명 규칙으로 일반화할 수
+    # 없으므로 이 문서 하나를 이름으로 지정한다. 'KB'로 시작하지 않으니
+    # 아래 KB국민은행 패턴(KB디폴트옵션)과 충돌하지 않는다.
+    (re.compile(r"^Default_1669193286004$"), "KB증권"),
     (re.compile(r"^하나은행"), "하나은행"),
     (re.compile(r"^IBK_RPM"), "IBK기업은행"),
     (re.compile(r"Shinhan_Securities"), "신한투자증권"),

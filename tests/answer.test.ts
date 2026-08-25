@@ -225,6 +225,30 @@ test("스캔 PDF 사업자는 documented가 될 수 없다 — 좌표가 없다"
   assert.equal(r.citations.length, 0);
 });
 
+test("KB증권 가입자가 자기 문서의 원문 근거를 받는다", () => {
+  // 2026-08 추가된 사업자. 포트폴리오 4종이 한 PDF(6p)에 들어 있어
+  // 청크·좌표가 제대로 만들어졌는지 확인한다.
+  for (const label of ["초저위험", "저위험", "중위험", "고위험"]) {
+    const facts = buildCalcFacts({ ...PROFILE, provider: "KB증권", currentLabel: label });
+    assert.ok(facts.portfolio, `KB증권 ${label} 포트폴리오를 찾아야 한다`);
+
+    const q = "구성상품이 뭔가요";
+    const { hits, relevance } = retrieve(q, "KB증권");
+    assert.ok(
+      hits.every((h) => h.chunk.provider === "KB증권"),
+      "다른 사업자 청크가 섞이면 안 된다",
+    );
+
+    const r = templateAnswer(q, facts, hits, relevance);
+    assert.equal(r.tier, "documented", `${label}: ${r.answer.slice(0, 60)}`);
+    assert.ok(
+      r.citations.every((c) => c.evidence && c.evidence.boxes.length > 0),
+      "원문 인용에는 페이지 마킹 좌표가 있어야 한다",
+    );
+    assert.deepEqual(validateNumbers(r.answer, facts, hits, q), []);
+  }
+});
+
 
 test("커버리지 임계값이 ②와 ③을 가른다 — 보정 고정", () => {
   // DOCUMENTED_COVERAGE = 0.6의 근거. 이 분리가 무너지면 폴백이
